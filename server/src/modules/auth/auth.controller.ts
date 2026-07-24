@@ -3,16 +3,23 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Query,
   Req,
   Res,
 } from '@nestjs/common';
-import { IsNotEmpty, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { Public } from './public.decorator';
 import { CurrentUser, CurrentUserPayload } from './current-user.decorator';
 import { DingTalkService } from './dingtalk.service';
+import { RequirePerm } from '../rbac/require-perm.decorator';
 
 class LoginDto {
   @IsString()
@@ -22,6 +29,28 @@ class LoginDto {
   @IsString()
   @IsNotEmpty()
   password: string;
+}
+
+class DingTalkConfigDto {
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientSecret?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  clearSecret?: boolean;
+
+  @IsOptional()
+  @IsString()
+  publicOrigin?: string;
 }
 
 @Controller('auth')
@@ -44,18 +73,39 @@ export class AuthController {
 
   @Public()
   @Get('config')
-  config() {
+  async config() {
     return this.dingtalk.configView();
+  }
+
+  @Get('dingtalk/config')
+  @RequirePerm('config.read')
+  async dingtalkConfig(@Req() req: Request) {
+    return this.dingtalk.adminConfigView(await this.publicOrigin(req));
+  }
+
+  @Put('dingtalk/config')
+  @RequirePerm('config.write')
+  async saveDingtalkConfig(
+    @Body() body: DingTalkConfigDto,
+    @Req() req: Request,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.dingtalk.saveConfig(
+      body,
+      user.username,
+      user.roles,
+      await this.publicOrigin(req),
+    );
   }
 
   @Public()
   @Get('dingtalk/login-url')
   async dingtalkLoginUrl(@Req() req: Request) {
-    const origin = this.publicOrigin(req);
+    const origin = await this.publicOrigin(req);
     const state = await this.dingtalk.createState('login', null, origin);
     const redirectUri = `${origin}/api/auth/dingtalk/callback`;
     return {
-      url: this.dingtalk.buildAuthorizeUrl(redirectUri, state.token),
+      url: await this.dingtalk.buildAuthorizeUrl(redirectUri, state.token),
       expiresAt: state.expiresAt,
     };
   }
@@ -65,11 +115,11 @@ export class AuthController {
     @Req() req: Request,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const origin = this.publicOrigin(req);
+    const origin = await this.publicOrigin(req);
     const state = await this.dingtalk.createState('bind', Number(user.id), origin);
     const redirectUri = `${origin}/api/auth/dingtalk/callback`;
     return {
-      url: this.dingtalk.buildAuthorizeUrl(redirectUri, state.token),
+      url: await this.dingtalk.buildAuthorizeUrl(redirectUri, state.token),
       expiresAt: state.expiresAt,
     };
   }
@@ -82,7 +132,9 @@ export class AuthController {
     @Query('state') stateToken: string | undefined,
     @Res() res: Response,
   ) {
-    let origin = process.env.MES_PUBLIC_ORIGIN?.trim().replace(/\/+$/, '') ||
+    let origin =
+      (await this.dingtalk.configuredPublicOrigin()) ||
+      process.env.MES_PUBLIC_ORIGIN?.trim().replace(/\/+$/, '') ||
       'http://127.0.0.1:5173';
     try {
       if (!stateToken) throw new Error('钉钉未返回登录状态');
@@ -122,7 +174,9 @@ export class AuthController {
     );
   }
 
-  private publicOrigin(req: Request): string {
+  private async publicOrigin(req: Request): Promise<string> {
+    const stored = await this.dingtalk.configuredPublicOrigin();
+    if (stored) return stored;
     const configured = process.env.MES_PUBLIC_ORIGIN?.trim().replace(/\/+$/, '');
     if (configured) {
       const url = new URL(configured);

@@ -4,6 +4,9 @@ import { DataSource } from 'typeorm';
 import { createTestDataSource } from '../helpers';
 import { DingTalkAuthState } from '../../src/modules/auth/dingtalk-auth-state.entity';
 import { DingTalkService } from '../../src/modules/auth/dingtalk.service';
+import { DingTalkConfig } from '../../src/modules/auth/dingtalk-config.entity';
+import { AuditLog } from '../../src/common/audit/audit.entity';
+import { AuditService } from '../../src/common/audit/audit.service';
 
 describe('DingTalkService', () => {
   let ds: DataSource;
@@ -15,7 +18,11 @@ describe('DingTalkService', () => {
     process.env.MES_DINGTALK_CLIENT_ID = 'ding-unit-test';
     process.env.MES_DINGTALK_CLIENT_SECRET = 'unit-secret';
     ds = await createTestDataSource();
-    service = new DingTalkService(ds.getRepository(DingTalkAuthState));
+    service = new DingTalkService(
+      ds.getRepository(DingTalkAuthState),
+      ds.getRepository(DingTalkConfig),
+      new AuditService(ds.getRepository(AuditLog)),
+    );
   });
 
   afterEach(async () => {
@@ -34,7 +41,7 @@ describe('DingTalkService', () => {
       'http://127.0.0.1:5173',
     );
     const url = new URL(
-      service.buildAuthorizeUrl(
+      await service.buildAuthorizeUrl(
         'http://127.0.0.1:5173/api/auth/dingtalk/callback',
         state.token,
       ),
@@ -83,5 +90,36 @@ describe('DingTalkService', () => {
       'x-acs-dingtalk-access-token': 'access-token',
     });
   });
-});
 
+  it('管理员配置仅返回脱敏状态，密钥加密保存且可启用', async () => {
+    delete process.env.MES_DINGTALK_CLIENT_ID;
+    delete process.env.MES_DINGTALK_CLIENT_SECRET;
+    const view = await service.saveConfig(
+      {
+        enabled: true,
+        clientId: 'dingConfigured001',
+        clientSecret: 'configured-secret',
+        publicOrigin: 'https://mes.example.com/',
+      },
+      'admin',
+      ['ADMIN'],
+      'http://127.0.0.1:5173',
+    );
+    expect(view).toMatchObject({
+      enabled: true,
+      ready: true,
+      clientId: 'dingConfigured001',
+      hasSecret: true,
+      publicOrigin: 'https://mes.example.com',
+    });
+    expect((view as any).clientSecret).toBeUndefined();
+    const stored = await ds.getRepository(DingTalkConfig).findOneByOrFail({
+      id: 1,
+    });
+    expect(stored.clientSecretEncrypted).not.toContain('configured-secret');
+    const audit = await ds.getRepository(AuditLog).findOneByOrFail({
+      action: 'auth.dingtalk.config.update',
+    });
+    expect(audit.operator).toBe('admin');
+  });
+});

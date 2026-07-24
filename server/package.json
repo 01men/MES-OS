@@ -10,7 +10,8 @@
     "test": "vitest run test/unit",
     "test:e2e": "vitest run test/e2e",
     "seed": "ts-node --transpile-only src/seed.ts",
-    "seed:demo": "ts-node --transpile-only src/seed-demo.ts"
+    "seed:demo": "ts-node --transpile-only src/seed-demo.ts",
+    "seed:volume": "ts-node --transpile-only src/seed-volume.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

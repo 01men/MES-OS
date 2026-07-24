@@ -82,3 +82,19 @@ npm run build
 - 11 岗位三轮权限矩阵：297 次授权决策通过
 - 服务端与 Web 生产构建：通过
 - 仓库级数据范围专项：4/4
+
+## 2026-07-24 集成能力
+
+- 最新协作进度：[docs/COLLABORATION_STATUS.md](docs/COLLABORATION_STATUS.md)
+- 钉钉登录配置：[docs/DINGTALK_LOGIN.md](docs/DINGTALK_LOGIN.md)
+- U8/外部系统 Open API：[docs/OPEN_API.md](docs/OPEN_API.md)
+- MES MCP 服务：[docs/MCP_SERVER.md](docs/MCP_SERVER.md)
+- 集成测试报告：[docs/TEST_REPORT_INTEGRATION_2026-07-24.md](docs/TEST_REPORT_INTEGRATION_2026-07-24.md)
+- Phase 4 交接：[docs/HANDOFF_2026-07-24_CODEX_PHASE4.md](docs/HANDOFF_2026-07-24_CODEX_PHASE4.md)
+
+生成或补齐 1000 套跨模块关联数据：
+
+```powershell
+cd server
+npm run seed:volume -- --count=1000
+```

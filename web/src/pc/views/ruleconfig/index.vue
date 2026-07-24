@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { getRuleHistory, setRule, type RuleVersion } from '@/api/config2'
+import {
+  getDingTalkAdminConfig,
+  saveDingTalkAdminConfig,
+  type DingTalkAdminConfig
+} from '@/api/auth'
 
 /**
  * 后端暂无「列出全部规则」端点（rule-config.controller 仅提供按 key 查询），
@@ -28,6 +33,61 @@ interface RuleRow {
 
 const rows = ref<RuleRow[]>([])
 const loading = ref(false)
+const dingtalkLoading = ref(false)
+const dingtalkSaving = ref(false)
+const dingtalk = reactive({
+  enabled: false,
+  clientId: '',
+  clientSecret: '',
+  publicOrigin: '',
+  hasSecret: false,
+  ready: false,
+  callbackUrl: '',
+  source: 'environment' as DingTalkAdminConfig['source']
+})
+const displayedCallbackUrl = computed(() => {
+  const origin = dingtalk.publicOrigin.trim().replace(/\/+$/, '')
+  return origin
+    ? `${origin}/api/auth/dingtalk/callback`
+    : dingtalk.callbackUrl
+})
+
+async function loadDingTalk() {
+  dingtalkLoading.value = true
+  try {
+    const { data } = await getDingTalkAdminConfig()
+    Object.assign(dingtalk, data, { clientSecret: '' })
+  } finally {
+    dingtalkLoading.value = false
+  }
+}
+
+async function saveDingTalk() {
+  if (dingtalk.enabled && (!dingtalk.clientId.trim() || (!dingtalk.hasSecret && !dingtalk.clientSecret.trim()))) {
+    ElMessage.warning('启用前请填写 Client ID 和 Client Secret')
+    return
+  }
+  dingtalkSaving.value = true
+  try {
+    const { data } = await saveDingTalkAdminConfig({
+      enabled: dingtalk.enabled,
+      clientId: dingtalk.clientId.trim(),
+      publicOrigin: dingtalk.publicOrigin.trim(),
+      ...(dingtalk.clientSecret.trim()
+        ? { clientSecret: dingtalk.clientSecret.trim() }
+        : {})
+    })
+    Object.assign(dingtalk, data, { clientSecret: '' })
+    ElMessage.success('钉钉登录配置已保存并写入审计日志')
+  } finally {
+    dingtalkSaving.value = false
+  }
+}
+
+async function copyCallback() {
+  await navigator.clipboard.writeText(displayedCallbackUrl.value)
+  ElMessage.success('回调地址已复制')
+}
 
 async function load() {
   loading.value = true
@@ -91,11 +151,65 @@ function openHistory(row: RuleRow) {
   historyVisible.value = true
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadDingTalk()
+})
 </script>
 
 <template>
   <div>
+    <el-card v-loading="dingtalkLoading" style="margin-bottom: 16px">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>钉钉账号登录</span>
+          <div style="display: flex; align-items: center; gap: 10px">
+            <el-tag :type="dingtalk.ready ? 'success' : 'info'">
+              {{ dingtalk.ready ? '可用' : '未就绪' }}
+            </el-tag>
+            <el-switch v-model="dingtalk.enabled" active-text="启用" />
+          </div>
+        </div>
+      </template>
+      <el-form label-width="170px" style="max-width: 820px">
+        <el-form-item label="Client ID / AppKey">
+          <el-input v-model="dingtalk.clientId" placeholder="钉钉企业内部应用中以 ding 开头的 AppKey" />
+        </el-form-item>
+        <el-form-item label="Client Secret / AppSecret">
+          <el-input
+            v-model="dingtalk.clientSecret"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="dingtalk.hasSecret ? '已加密保存；留空表示不修改' : '请输入 AppSecret'"
+          />
+        </el-form-item>
+        <el-form-item label="MES 公开访问地址">
+          <el-input v-model="dingtalk.publicOrigin" placeholder="例如 https://mes.example.com" />
+        </el-form-item>
+        <el-form-item label="钉钉授权回调地址">
+          <div style="display: flex; width: 100%; gap: 8px">
+            <el-input :model-value="displayedCallbackUrl" readonly />
+            <el-button @click="copyCallback">复制</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="dingtalkSaving" @click="saveDingTalk">
+            保存钉钉配置
+          </el-button>
+          <span style="margin-left: 12px; color: #909399; font-size: 12px">
+            密钥仅加密保存在服务端，不会回传浏览器；配置来源：{{ dingtalk.source }}
+          </span>
+        </el-form-item>
+      </el-form>
+      <el-alert type="info" :closable="false" show-icon>
+        <template #title>
+          钉钉开放平台创建企业内部应用 → 开通统一身份认证 → 将上方回调地址登记为授权回调地址；
+          保存启用后，登录页才会显示钉钉入口。首次使用需先以账号密码登录并在头像菜单中绑定钉钉。
+        </template>
+      </el-alert>
+    </el-card>
+
     <el-alert
       type="info"
       show-icon

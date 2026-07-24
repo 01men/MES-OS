@@ -1,0 +1,24 @@
+{
+  "name": "mes-os-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start:stdio": "node dist/stdio.js",
+    "start:http": "node dist/http.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "express": "^5.1.0",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3"
+  }
+}

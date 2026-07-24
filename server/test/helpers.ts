@@ -9,6 +9,7 @@ import { Role } from '../src/modules/rbac/entities/role.entity';
 import { Permission } from '../src/modules/rbac/entities/permission.entity';
 import { TempGrant } from '../src/modules/rbac/entities/temp-grant.entity';
 import { DingTalkAuthState } from '../src/modules/auth/dingtalk-auth-state.entity';
+import { DingTalkConfig } from '../src/modules/auth/dingtalk-config.entity';
 import { Material } from '../src/modules/masterdata/entities/material.entity';
 import { Supplier } from '../src/modules/masterdata/entities/supplier.entity';
 import { Customer } from '../src/modules/masterdata/entities/customer.entity';
@@ -39,6 +40,7 @@ export const TEST_ENTITIES = [
   Permission,
   TempGrant,
   DingTalkAuthState,
+  DingTalkConfig,
   Material,
   Supplier,
   Customer,
