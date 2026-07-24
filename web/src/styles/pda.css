@@ -1,0 +1,51 @@
+/* PDA 端全局样式：大按钮、大字号、反馈色变量（适配 4-7 寸手持屏） */
+
+:root {
+  --pda-font-size: 18px;
+  --pda-btn-height: 56px;
+
+  /* 扫码反馈色（PRD 4.12） */
+  --scan-success: #22a355;
+  --scan-error: #d93026;
+  --scan-duplicate: #e6a100;
+  --scan-offline: #e8720c;
+}
+
+/* 大按钮 */
+.pda-btn {
+  flex: 1;
+  min-height: var(--pda-btn-height);
+  padding: 0 18px;
+  border: none;
+  border-radius: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  background: #1f6fd6;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.pda-btn:active { opacity: 0.85; }
+.pda-btn:disabled { opacity: 0.5; }
+.pda-btn--primary { background: #1f6fd6; }
+.pda-btn--success { background: var(--scan-success); }
+.pda-btn--warning { background: var(--scan-duplicate); }
+.pda-btn--danger  { background: var(--scan-error); }
+.pda-btn--info    { background: #6b7280; }
+
+/* 大输入框 */
+.pda-input {
+  min-height: 52px;
+  padding: 0 14px;
+  font-size: 20px;
+  border-radius: 8px;
+}
+
+/* PDA 页面通用卡片 */
+.pda-card {
+  background: #fff;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}

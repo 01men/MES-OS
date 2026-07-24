@@ -1,0 +1,30 @@
+# Dependencies and build output
+**/node_modules/
+**/dist/
+**/.vite/
+
+# Local runtime state
+.runtime/
+server/data/*.sqlite
+server/data/*.sqlite-*
+server/data/backups/
+server/data/uploads/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+server/.env
+web/.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+
