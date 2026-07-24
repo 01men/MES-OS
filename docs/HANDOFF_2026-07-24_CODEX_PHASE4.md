@@ -2,6 +2,8 @@
 
 > 收尾状态：本阶段功能与回归已完成。Kimi K3 接班时先阅读
 > `docs/COLLABORATION_STATUS.md`，该文件是后续协作的最新单一入口。
+> Phase 4 功能提交 `3f605ab` 已发布至 `01men/MES-OS` 的 `main`；
+> Server、Web、MCP 已在发布后重启并完成健康检查。
 
 ## 本阶段完成
 

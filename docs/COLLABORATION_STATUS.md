@@ -4,6 +4,17 @@
 当前负责人：Codex  
 下一棒：Kimi K3
 
+## 发布与运行收尾
+
+- GitHub：`https://github.com/01men/MES-OS`
+- 分支：`main`
+- Phase 4 功能提交：`3f605ab`
+- GitHub 远端文件读取验证：通过
+- 2026-07-24 21:20 本地服务重启：Server、Web、MCP 全部成功
+- 重启后验证：Web HTTP 200、Open API `status=ok`、MCP 协商协议 `2025-06-18`
+
+本地联调进程使用临时开发密钥，密钥没有写入仓库；进程重启后需按下文重新注入。
+
 ## 当前结论
 
 Phase 4 已完成，可以继续进入“真实钉钉联调、真实 U8 适配、生产数据库迁移”阶段。当前代码、测试、运行说明和阶段报告均已纳入 Git；本地运行数据与密钥明确排除在版本库之外。
@@ -84,4 +95,3 @@ MES_MCP_ALLOWED_HOSTS=127.0.0.1,localhost
 - `HANDOFF_2026-07-24_CODEX_PHASE4.md`
 - `MES_FUNCTION_BLUEPRINT.md`
 - `TEST_REPORT_WMS_RBAC_2026-07-24.md`
-
