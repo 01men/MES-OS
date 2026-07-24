@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IdempotencyRecord } from './idempotency.entity';
+import { scopedBusinessKey } from './idempotency-context';
 
 /**
  * 幂等服务：HTTP 拦截器与 InventoryService 共用。
@@ -15,7 +16,9 @@ export class IdempotencyService {
   ) {}
 
   async findStored<T>(requestId: string, businessKey: string): Promise<T | undefined> {
-    const rec = await this.repo.findOne({ where: { requestId, businessKey } });
+    const rec = await this.repo.findOne({
+      where: { requestId, businessKey: scopedBusinessKey(businessKey) },
+    });
     return rec ? (JSON.parse(rec.response) as T) : undefined;
   }
 
@@ -32,7 +35,7 @@ export class IdempotencyService {
       await this.repo.save(
         this.repo.create({
           requestId,
-          businessKey,
+          businessKey: scopedBusinessKey(businessKey),
           response: JSON.stringify(result ?? null),
         }),
       );

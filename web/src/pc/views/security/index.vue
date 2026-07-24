@@ -7,6 +7,8 @@ import {
   listPermissions,
   listTempGrants,
   assignUserRoles,
+  assignUserWarehouses,
+  listWarehouses,
   createTempGrant,
   revokeTempGrant,
   unbindUserDingTalk,
@@ -16,6 +18,7 @@ import {
   type RbacRole,
   type RbacPermission,
   type TempGrant,
+  type WarehouseOption,
   type AuditLog
 } from '@/api/security2'
 
@@ -37,20 +40,29 @@ function roleKey(r: unknown): string | number {
 const users = ref<RbacUser[]>([])
 const roles = ref<RbacRole[]>([])
 const permissions = ref<RbacPermission[]>([])
+const warehouses = ref<WarehouseOption[]>([])
 const tempGrants = ref<TempGrant[]>([])
 const rbacLoading = ref(false)
 /** 用户 id → 编辑中的角色选择 */
 const roleSelection = reactive<Record<string, (string | number)[]>>({})
+const warehouseSelection = reactive<Record<string, string[]>>({})
 
 async function loadRbac() {
   rbacLoading.value = true
   try {
-    const [u, r, p] = await Promise.all([listUsers(), listRoles(), listPermissions()])
+    const [u, r, p, w] = await Promise.all([
+      listUsers(),
+      listRoles(),
+      listPermissions(),
+      listWarehouses()
+    ])
     users.value = u.data
     roles.value = r.data
     permissions.value = p.data
+    warehouses.value = w.data
     users.value.forEach((user) => {
       roleSelection[String(user.id)] = (user.roles ?? []).map((x) => roleKey(x))
+      warehouseSelection[String(user.id)] = [...(user.warehouseCodes ?? [])]
     })
     try {
       const tg = await listTempGrants()
@@ -114,9 +126,12 @@ const savingUser = ref<string | null>(null)
 async function saveRoles(user: RbacUser) {
   savingUser.value = String(user.id)
   try {
-    await assignUserRoles(user.id, roleSelection[String(user.id)] ?? [])
-    ElMessage.success(`已更新 ${user.username} 的角色`)
-    loadRbac()
+    await Promise.all([
+      assignUserRoles(user.id, roleSelection[String(user.id)] ?? []),
+      assignUserWarehouses(user.id, warehouseSelection[String(user.id)] ?? [])
+    ])
+    ElMessage.success(`已更新 ${user.username} 的角色与仓库范围`)
+    await loadRbac()
   } finally {
     savingUser.value = null
   }
@@ -238,6 +253,24 @@ onMounted(() => {
                     :key="String(roleKey(r))"
                     :label="roleName(r)"
                     :value="roleKey(r)"
+                  />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="仓库数据范围" min-width="220">
+              <template #default="{ row }">
+                <el-select
+                  v-model="warehouseSelection[String(row.id)]"
+                  multiple
+                  collapse-tags
+                  placeholder="未分配仓库"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="warehouse in warehouses"
+                    :key="warehouse.warehouseCode"
+                    :label="`${warehouse.name || warehouse.warehouseCode}（${warehouse.warehouseCode}）`"
+                    :value="warehouse.warehouseCode"
                   />
                 </el-select>
               </template>

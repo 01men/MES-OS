@@ -13,7 +13,10 @@ import { ArrivalStatus } from './entities/receiving-arrival.entity';
 import { BizException } from '../../common/exceptions';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { RequirePerm } from '../rbac/require-perm.decorator';
-import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../auth/current-user.decorator';
 
 function reqId(header: string | undefined, body?: any): string {
   const id = header || body?.requestId;
@@ -57,21 +60,27 @@ export class ReceivingController {
   createArrival(
     @Body() body: CreateArrivalInput & { requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.svc.createArrival(body, reqId(rid, body), operator);
+    return this.svc.createArrival(body, reqId(rid, body), actor.username, actor);
   }
 
   @Get('arrivals')
   @RequirePerm('inventory.read')
-  arrivals(@Query('status') status?: ArrivalStatus) {
-    return this.svc.listArrivals(status);
+  arrivals(
+    @CurrentUser() actor: CurrentUserPayload,
+    @Query('status') status?: ArrivalStatus,
+  ) {
+    return this.svc.listArrivals(status, actor);
   }
 
   @Get(':id')
   @RequirePerm('inventory.read')
-  arrival(@Param('id', ParseIntPipe) id: number) {
-    return this.svc.getArrival(id);
+  arrival(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.svc.getArrival(id, actor);
   }
 
   /** 送检（三步链第二步） */
@@ -82,9 +91,9 @@ export class ReceivingController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.svc.sendInspect(id, reqId(rid, body), operator);
+    return this.svc.sendInspect(id, reqId(rid, body), actor.username, actor);
   }
 
   /** IQC 判定提交（全部/部分/特采 + 数量明细） */
@@ -95,9 +104,9 @@ export class ReceivingController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: IqcInput & { requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.svc.submitIqc(id, body, reqId(rid, body), operator);
+    return this.svc.submitIqc(id, body, reqId(rid, body), actor.username, actor);
   }
 
   /** 确认入库/隔离：生成批次+包装号+入库存+入队同步 U8 */
@@ -108,9 +117,9 @@ export class ReceivingController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: ConfirmInput & { requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.svc.confirm(id, body ?? {}, reqId(rid, body), operator);
+    return this.svc.confirm(id, body ?? {}, reqId(rid, body), actor.username, actor);
   }
 
   /** 标签补打（原因必填，记 LabelPrintLog） */
@@ -120,8 +129,14 @@ export class ReceivingController {
   reprint(
     @Body() body: { packageNo: string; reason?: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.svc.reprintLabel(body?.packageNo, body?.reason, reqId(rid, body), operator);
+    return this.svc.reprintLabel(
+      body?.packageNo,
+      body?.reason,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 }

@@ -56,36 +56,36 @@ const PERMISSIONS: [string, string, PermissionType][] = [
 ];
 
 /**
- * 角色清单（PRD 对接会 11 个岗位角色全量建立，数据范围默认 ALL）：
+ * 角色清单（PRD 对接会 11 个岗位角色全量建立，WMS 岗位按仓库范围隔离）：
  * 收料员/仓管员/质检员/质量工程师/PMC计划员/生产班组长/仓库主管/财务/销售/IT运维/系统管理员
  */
-export const ROLE_DEFINITIONS: { code: string; name: string; perms: string[] }[] = [
-  { code: 'RECEIVER', name: '收料员', perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'offline.sync', 'receiving.read', 'receiving.operate'] },
-  { code: 'KEEPER', name: '仓管员', perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'inventory.move', 'offline.sync', 'prep.read', 'prep.operate', 'surplus.read', 'surplus.operate', 'returns.read', 'returns.operate', 'returns.qtransfer'] },
-  { code: 'INSPECTOR', name: '质检员', perms: ['masterdata.read', 'inventory.read', 'inventory.move', 'receiving.read', 'receiving.operate', 'returns.qtransfer'] },
-  { code: 'QE', name: '质量工程师', perms: ['masterdata.read', 'inventory.read', 'inventory.move', 'receiving.read', 'receiving.operate', 'returns.qtransfer'] },
-  { code: 'PMC', name: 'PMC计划员', perms: ['masterdata.read', 'inventory.read', 'transfer.read', 'transfer.operate', 'prep.read'] },
-  { code: 'LEADER', name: '生产班组长', perms: ['masterdata.read', 'inventory.read', 'offline.sync', 'prep.read'] },
-  { code: 'WH_MANAGER', name: '仓库主管', perms: ['masterdata.read', 'masterdata.material.create', 'masterdata.material.update', 'inventory.read', 'inventory.inbound', 'inventory.move', 'inventory.adjust', 'integration.read', 'integration.replay', 'stocktake.read', 'stocktake.operate', 'approval.read', 'approval.operate'] },
-  { code: 'FINANCE', name: '财务', perms: ['integration.read', 'integration.reconcile', 'approval.read', 'approval.operate', 'audit.read'] },
-  { code: 'SALES', name: '销售', perms: ['masterdata.read', 'shipping.read', 'shipping.operate'] },
-  { code: 'IT_OPS', name: 'IT运维', perms: ['integration.read', 'integration.replay', 'integration.reconcile', 'config.read', 'config.write'] },
-  { code: 'ADMIN', name: '系统管理员', perms: ['*'] },
+export const ROLE_DEFINITIONS: { code: string; name: string; dataScope: DataScope; perms: string[] }[] = [
+  { code: 'RECEIVER', name: '收料员', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'offline.sync', 'receiving.read', 'receiving.operate'] },
+  { code: 'KEEPER', name: '仓管员', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'inventory.move', 'offline.sync', 'prep.read', 'prep.operate', 'surplus.read', 'surplus.operate', 'returns.read', 'returns.operate', 'returns.qtransfer'] },
+  { code: 'INSPECTOR', name: '质检员', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'inventory.move', 'receiving.read', 'receiving.operate', 'returns.qtransfer'] },
+  { code: 'QE', name: '质量工程师', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'inventory.move', 'receiving.read', 'receiving.operate', 'returns.qtransfer'] },
+  { code: 'PMC', name: 'PMC计划员', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'transfer.read', 'transfer.operate', 'prep.read'] },
+  { code: 'LEADER', name: '生产班组长', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'inventory.read', 'offline.sync', 'prep.read'] },
+  { code: 'WH_MANAGER', name: '仓库主管', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'masterdata.material.create', 'masterdata.material.update', 'inventory.read', 'inventory.inbound', 'inventory.move', 'inventory.adjust', 'integration.read', 'integration.replay', 'stocktake.read', 'stocktake.operate', 'approval.read', 'approval.operate'] },
+  { code: 'FINANCE', name: '财务', dataScope: DataScope.ALL, perms: ['integration.read', 'integration.reconcile', 'approval.read', 'approval.operate', 'audit.read'] },
+  { code: 'SALES', name: '销售', dataScope: DataScope.WAREHOUSE, perms: ['masterdata.read', 'shipping.read', 'shipping.operate'] },
+  { code: 'IT_OPS', name: 'IT运维', dataScope: DataScope.ALL, perms: ['integration.read', 'integration.replay', 'integration.reconcile', 'config.read', 'config.write'] },
+  { code: 'ADMIN', name: '系统管理员', dataScope: DataScope.ALL, perms: ['*'] },
 ];
 
 /** 仅用于本地演示与自动化验收；生产环境必须停用或重置这些密码。 */
 export const DEMO_USERS = [
-  { username: 'admin', password: 'Admin@123', name: '系统管理员', role: 'ADMIN' },
-  { username: 'receiver01', password: 'Recv@123', name: '收料员一号', role: 'RECEIVER' },
-  { username: 'keeper01', password: 'Keep@123', name: '仓管员一号', role: 'KEEPER' },
-  { username: 'inspector01', password: 'Inspect@123', name: '质检员一号', role: 'INSPECTOR' },
-  { username: 'qe01', password: 'Qe@123', name: '质量工程师一号', role: 'QE' },
-  { username: 'pmc01', password: 'Pmc@123', name: 'PMC计划员一号', role: 'PMC' },
-  { username: 'leader01', password: 'Lead@123', name: '生产班组长一号', role: 'LEADER' },
-  { username: 'whmanager01', password: 'WhMgr@123', name: '仓库主管一号', role: 'WH_MANAGER' },
-  { username: 'finance01', password: 'Fin@123', name: '财务一号', role: 'FINANCE' },
-  { username: 'sales01', password: 'Sales@123', name: '销售一号', role: 'SALES' },
-  { username: 'itops01', password: 'Ops@123', name: 'IT运维一号', role: 'IT_OPS' },
+  { username: 'admin', password: 'Admin@123', name: '系统管理员', role: 'ADMIN', warehouses: [] },
+  { username: 'receiver01', password: 'Recv@123', name: '收料员一号', role: 'RECEIVER', warehouses: ['WH01'] },
+  { username: 'keeper01', password: 'Keep@123', name: '仓管员一号', role: 'KEEPER', warehouses: ['WH01'] },
+  { username: 'inspector01', password: 'Inspect@123', name: '质检员一号', role: 'INSPECTOR', warehouses: ['WH01'] },
+  { username: 'qe01', password: 'Qe@123', name: '质量工程师一号', role: 'QE', warehouses: ['WH01'] },
+  { username: 'pmc01', password: 'Pmc@123', name: 'PMC计划员一号', role: 'PMC', warehouses: ['WH01'] },
+  { username: 'leader01', password: 'Lead@123', name: '生产班组长一号', role: 'LEADER', warehouses: ['WH01'] },
+  { username: 'whmanager01', password: 'WhMgr@123', name: '仓库主管一号', role: 'WH_MANAGER', warehouses: ['WH01'] },
+  { username: 'finance01', password: 'Fin@123', name: '财务一号', role: 'FINANCE', warehouses: [] },
+  { username: 'sales01', password: 'Sales@123', name: '销售一号', role: 'SALES', warehouses: ['WH02'] },
+  { username: 'itops01', password: 'Ops@123', name: 'IT运维一号', role: 'IT_OPS', warehouses: [] },
 ] as const;
 
 /** 可被 CLI 与 e2e 复用的种子数据逻辑 */
@@ -105,19 +105,22 @@ export async function seedData(ds: DataSource) {
     let role = await roleRepo.findOne({ where: { code: def.code } });
     const perms = def.perms.map((c) => permMap.get(c)!);
     if (!role) {
-      role = roleRepo.create({ code: def.code, name: def.name, dataScope: DataScope.ALL, permissions: perms });
+      role = roleRepo.create({ code: def.code, name: def.name, dataScope: def.dataScope, permissions: perms });
     } else {
+      role.name = def.name;
+      role.dataScope = def.dataScope;
       role.permissions = perms;
     }
     await roleRepo.save(role);
   }
 
-  const ensureUser = async (username: string, password: string, name: string, roleCodes: string[]) => {
+  const ensureUser = async (username: string, password: string, name: string, roleCodes: string[], warehouseCodes: readonly string[]) => {
     let u = await userRepo.findOne({ where: { username } });
     const roles = await roleRepo.find({ where: roleCodes.map((code) => ({ code })) as any });
     if (u) {
       u.name = name;
       u.roles = roles;
+      u.warehouseCodes = [...warehouseCodes];
       return userRepo.save(u);
     }
     u = userRepo.create({
@@ -125,12 +128,13 @@ export async function seedData(ds: DataSource) {
       name,
       passwordHash: await bcrypt.hash(password, 10),
       roles,
+      warehouseCodes: [...warehouseCodes],
       disabled: false,
     });
     return userRepo.save(u);
   };
   for (const user of DEMO_USERS) {
-    await ensureUser(user.username, user.password, user.name, [user.role]);
+    await ensureUser(user.username, user.password, user.name, [user.role], user.warehouses);
   }
 
   // ---- 演示主数据 ----

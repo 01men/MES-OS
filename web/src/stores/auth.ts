@@ -9,6 +9,7 @@ export interface AuthUser {
   perms?: string[]
   dingtalkBound?: boolean
   avatarUrl?: string | null
+  warehouseCodes?: string[]
 }
 
 const TOKEN_KEY = 'wms-token'

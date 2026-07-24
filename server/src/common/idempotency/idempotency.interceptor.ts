@@ -6,9 +6,10 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Observable, from, of } from 'rxjs';
+import { Observable, defer, from, of } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 import { IdempotencyService } from './idempotency.service';
+import { idempotencyActorContext } from './idempotency-context';
 
 export const IDEMPOTENT_KEY = 'idempotent:businessKey';
 
@@ -28,29 +29,41 @@ export class IdempotencyInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const meta = this.reflector.get<string>(IDEMPOTENT_KEY, context.getHandler());
-    if (meta === undefined) return next.handle();
-
     const req = context.switchToHttp().getRequest();
-    const requestId = (req.headers['x-request-id'] ??
-      req.headers['x-task-no']) as string;
-    if (!requestId) return next.handle(); // 无 X-Request-Id 不做去重
-    if (!req.headers['x-request-id']) {
-      req.headers['x-request-id'] = requestId;
-    }
+    const warehouseScope = req.user?.allWarehouseAccess
+      ? '*'
+      : [...(req.user?.warehouseCodes ?? [])].sort().join(',');
+    const actorKey = req.user?.id
+      ? `${req.user.id}|warehouses=${warehouseScope}`
+      : 'anonymous';
+    return defer(() =>
+      idempotencyActorContext.run(actorKey, () => {
+        const meta = this.reflector.get<string>(
+          IDEMPOTENT_KEY,
+          context.getHandler(),
+        );
+        if (meta === undefined) return next.handle();
 
-    const businessKey =
-      meta || `${req.method} ${req.route?.path ?? req.url}`;
+        const requestId = (req.headers['x-request-id'] ??
+          req.headers['x-task-no']) as string;
+        if (!requestId) return next.handle();
+        if (!req.headers['x-request-id']) {
+          req.headers['x-request-id'] = requestId;
+        }
+        const businessKey =
+          meta || `${req.method} ${req.route?.path ?? req.url}`;
 
-    return from(this.idem.findStored(requestId, businessKey)).pipe(
-      mergeMap((stored) => {
-        if (stored !== undefined) return of(stored);
-        return next.handle().pipe(
-          mergeMap((data) =>
-            from(
-              this.idem.execute(requestId, businessKey, async () => data),
-            ),
-          ),
+        return from(this.idem.findStored(requestId, businessKey)).pipe(
+          mergeMap((stored) => {
+            if (stored !== undefined) return of(stored);
+            return next.handle().pipe(
+              mergeMap((data) =>
+                from(
+                  this.idem.execute(requestId, businessKey, async () => data),
+                ),
+              ),
+            );
+          }),
         );
       }),
     );

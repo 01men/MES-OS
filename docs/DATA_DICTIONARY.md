@@ -8,7 +8,7 @@
 
 | 表 | 实体 | 用途 |
 | --- | --- | --- |
-| `rbac_user` | `User` | 用户、密码摘要、禁用状态 |
+| `rbac_user` | `User` | 用户、密码摘要、禁用状态、钉钉身份、授权仓库编码数组 |
 | `rbac_role` | `Role` | 角色、数据范围 |
 | `rbac_permission` | `Permission` | 菜单/按钮权限码 |
 | `rbac_user_role` | 关联表 | 用户与角色多对多 |
@@ -34,7 +34,7 @@
 | `md_bom` | `Bom` | `bomCode`、产品、版本 |
 | `md_bom_item` | `BomItem` | BOM 物料行 |
 | `inv_stock_lot` | `StockLot` | `packageNo`，批次/库位/状态/数量 |
-| `inv_stock_occupation` | `StockOccupation` | 工单备料占用 |
+| `inv_stock_occupation` | `StockOccupation` | 工单备料占用，含占用归属仓库 |
 | `inv_stock_movement` | `StockMovement` | 库存移动与调整流水 |
 
 ## 业务与集成
@@ -58,4 +58,3 @@
 - 规则配置：同一 `key` 追加 `version`，不覆盖旧版本
 - 审计日志：业务 API 不提供更新或删除
 - 生产迁移：禁止继续依赖 `synchronize:true`，需把本字典固化为 migration
-

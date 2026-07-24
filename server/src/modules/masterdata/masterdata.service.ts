@@ -9,6 +9,7 @@ import { Warehouse } from './entities/warehouse.entity';
 import { Location } from './entities/location.entity';
 import { WorkOrder } from './entities/work-order.entity';
 import { Bom } from './entities/bom.entity';
+import type { WarehouseScope } from '../inventory/inventory.service';
 
 const RESOURCES: Record<string, EntityTarget<ObjectLiteral>> = {
   materials: Material,
@@ -33,36 +34,51 @@ export class MasterdataService {
     return this.ds.getRepository(target);
   }
 
-  list(resource: string) {
-    return this.repo(resource).find();
+  list(resource: string, scope?: WarehouseScope) {
+    const repo = this.repo(resource);
+    if (!this.isWarehouseResource(resource) || !scope || scope.allWarehouseAccess) {
+      return repo.find();
+    }
+    if (!scope.warehouseCodes.length) return [];
+    const field = resource === 'warehouses' ? 'warehouseCode' : 'warehouseCode';
+    return repo
+      .createQueryBuilder('row')
+      .where(`row.${field} IN (:...warehouseCodes)`, {
+        warehouseCodes: scope.warehouseCodes,
+      })
+      .getMany();
   }
 
-  async get(resource: string, code: string) {
+  async get(resource: string, code: string, scope?: WarehouseScope) {
     const pk = this.pkOf(resource);
     const row = await this.repo(resource).findOne({ where: { [pk]: code } as any });
     if (!row) {
       throw new BizException('NOT_FOUND', `${resource}/${code} not found`, 404);
     }
+    this.assertRowWarehouseAccess(resource, row, scope);
     return row;
   }
 
-  async create(resource: string, body: any) {
+  async create(resource: string, body: any, scope?: WarehouseScope) {
     const pk = this.pkOf(resource);
     if (!body?.[pk]) {
       throw new BizException('PK_REQUIRED', `Missing primary key field: ${pk}`);
     }
+    this.assertRowWarehouseAccess(resource, body, scope);
     return this.repo(resource).save(body);
   }
 
-  async update(resource: string, code: string, body: any) {
-    await this.get(resource, code);
+  async update(resource: string, code: string, body: any, scope?: WarehouseScope) {
+    const current = await this.get(resource, code, scope);
     const pk = this.pkOf(resource);
     delete body[pk];
-    return this.repo(resource).save({ ...body, [pk]: code });
+    const merged = { ...current, ...body, [pk]: code };
+    this.assertRowWarehouseAccess(resource, merged, scope);
+    return this.repo(resource).save(merged);
   }
 
-  async remove(resource: string, code: string) {
-    const row = await this.get(resource, code);
+  async remove(resource: string, code: string, scope?: WarehouseScope) {
+    const row = await this.get(resource, code, scope);
     await this.repo(resource).remove(row);
     return { removed: code };
   }
@@ -70,5 +86,28 @@ export class MasterdataService {
   private pkOf(resource: string): string {
     const meta = this.repo(resource).metadata;
     return meta.primaryColumns[0].propertyName;
+  }
+
+  private isWarehouseResource(resource: string): boolean {
+    return resource === 'warehouses' || resource === 'locations';
+  }
+
+  private assertRowWarehouseAccess(
+    resource: string,
+    row: any,
+    scope?: WarehouseScope,
+  ) {
+    if (!this.isWarehouseResource(resource) || !scope || scope.allWarehouseAccess) {
+      return;
+    }
+    const warehouseCode =
+      resource === 'warehouses' ? row.warehouseCode : row.warehouseCode;
+    if (!scope.warehouseCodes.includes(warehouseCode)) {
+      throw new BizException(
+        'WAREHOUSE_SCOPE_FORBIDDEN',
+        `No data access to warehouse ${warehouseCode}`,
+        403,
+      );
+    }
   }
 }

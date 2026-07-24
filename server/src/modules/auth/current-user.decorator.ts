@@ -6,6 +6,9 @@ export interface CurrentUserPayload {
   name: string;
   roles: string[];
   permissions: string[];
+  dataScopes: string[];
+  warehouseCodes: string[];
+  allWarehouseAccess: boolean;
 }
 
 /** @CurrentUser() 取当前登录用户；@CurrentUser('username') 取单字段 */

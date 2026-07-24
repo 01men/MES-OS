@@ -7,6 +7,7 @@
 - 后端：NestJS 10 + TypeORM + sql.js，默认端口 `3000`
 - 前端：Vue 3 + Vite + Element Plus，默认端口 `5173`
 - 业务：收料/IQC、备料/交接、余料、挪料、退补料、盘点、发运、追溯、审批、审计、规则与接口监控
+- 权限：11 岗位 RBAC、临时授权、钉钉身份绑定、仓库级数据范围
 - 外部系统：U8 当前使用 Mock 适配器，真实 U8 联调尚未完成
 - 数据库：`server/data/mes.sqlite`，当前为单机 MVP 方案
 
@@ -59,6 +60,7 @@ npm run build
 - [操作与运维手册](docs/OPERATIONS.md)
 - [Codex 接棒交接记录](docs/HANDOFF_2026-07-24_CODEX.md)
 - [第二阶段开发交接](docs/HANDOFF_2026-07-24_CODEX_PHASE2.md)
+- [第三阶段开发交接](docs/HANDOFF_2026-07-24_CODEX_PHASE3.md)
 - [MES 完整功能蓝图](docs/MES_FUNCTION_BLUEPRINT.md)
 - [WMS/RBAC 多角色测试报告](docs/TEST_REPORT_WMS_RBAC_2026-07-24.md)
 - [后端开发说明](server/README.md)
@@ -71,11 +73,12 @@ npm run build
 2. 将 sql.js + `synchronize:true` 替换为正式数据库与 migration。
 3. 设置强随机 `MES_JWT_SECRET`，移除演示账号或强制改密。
 4. 将 `MockU8Adapter` 替换为经评审的真实 U8 接口适配器并完成对账。
-5. 完成离线 1000 条记录、权限数据范围、性能、备份恢复和回退演练。
+5. 完成部门/产线/本人数据范围、离线 1000 条记录、性能、备份恢复和回退演练。
 
 ## 当前自动化基线
 
 - 后端单测：20/20
-- 后端 E2E：64/64
+- 后端 E2E：69/69
 - 11 岗位三轮权限矩阵：297 次授权决策通过
 - 服务端与 Web 生产构建：通过
+- 仓库级数据范围专项：4/4

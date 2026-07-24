@@ -18,6 +18,10 @@ export class StockOccupation {
   @Column({ type: 'varchar' })
   materialCode: string;
 
+  /** 占用归属仓库；历史数据可为空。 */
+  @Column({ type: 'varchar', nullable: true })
+  warehouseCode: string | null;
+
   @Column({ type: 'real' })
   qty: number;
 

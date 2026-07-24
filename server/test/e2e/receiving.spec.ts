@@ -425,4 +425,63 @@ describe('receiving 来料链接收 e2e', () => {
     expect(reprint.reason).toBe('标签破损');
     expect(reprint.printedBy).toBe('admin');
   });
+
+  it('⑧ 到货单列表、详情与补打均执行仓库数据隔离', async () => {
+    const crossActorRequestId = rid('t8-wh02');
+    const wh02 = await request(server)
+      .post('/api/receiving/arrivals')
+      .set(auth(admin))
+      .set('X-Request-Id', crossActorRequestId)
+      .send({
+        poNo: 'PO-TEST-5000',
+        materialCode: 'M-2001',
+        qty: 1,
+        scannedQty: 1,
+        labelQty: 1,
+        warehouseCode: 'WH02',
+        locationCode: 'WH02-C-01',
+      });
+    expect(wh02.status).toBe(201);
+
+    const crossActorReplay = await request(server)
+      .post('/api/receiving/arrivals')
+      .set(auth(ctx.receiverToken))
+      .set('X-Request-Id', crossActorRequestId)
+      .send({
+        poNo: 'PO-TEST-5000',
+        materialCode: 'M-2001',
+        qty: 1,
+        scannedQty: 1,
+        labelQty: 1,
+        warehouseCode: 'WH02',
+        locationCode: 'WH02-C-01',
+      });
+    expect(crossActorReplay.status).toBe(403);
+    expect(crossActorReplay.body.code).toBe('WAREHOUSE_SCOPE_FORBIDDEN');
+
+    const scopedList = await request(server)
+      .get('/api/receiving/arrivals')
+      .set(auth(ctx.receiverToken));
+    expect(scopedList.status).toBe(200);
+    expect(
+      scopedList.body.every((arrival: any) => arrival.warehouseCode === 'WH01'),
+    ).toBe(true);
+    expect(
+      scopedList.body.some((arrival: any) => arrival.id === wh02.body.id),
+    ).toBe(false);
+
+    const detail = await request(server)
+      .get(`/api/receiving/${wh02.body.id}`)
+      .set(auth(ctx.receiverToken));
+    expect(detail.status).toBe(403);
+    expect(detail.body.code).toBe('WAREHOUSE_SCOPE_FORBIDDEN');
+
+    const reprint = await request(server)
+      .post('/api/receiving/labels/reprint')
+      .set(auth(ctx.receiverToken))
+      .set('X-Request-Id', rid('t8-reprint'))
+      .send({ packageNo: wh02.body.packageNo, reason: '越权测试' });
+    expect(reprint.status).toBe(403);
+    expect(reprint.body.code).toBe('WAREHOUSE_SCOPE_FORBIDDEN');
+  });
 });

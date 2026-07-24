@@ -12,6 +12,7 @@ import { StockLot } from './entities/stock-lot.entity';
 import { StockOccupation } from './entities/stock-occupation.entity';
 import { StockMovement } from './entities/stock-movement.entity';
 import { Material } from '../masterdata/entities/material.entity';
+import { Location } from '../masterdata/entities/location.entity';
 
 export interface InboundInput {
   packageNo: string;
@@ -31,6 +32,12 @@ export interface InboundInput {
 export interface OccupyItem {
   materialCode: string;
   qty: number;
+  warehouseCode?: string;
+}
+
+export interface WarehouseScope {
+  allWarehouseAccess: boolean;
+  warehouseCodes: string[];
 }
 
 export interface AvailableResult {
@@ -76,10 +83,27 @@ export class InventoryService {
   ) {}
 
   /** 入库：新建批次行（packageNo 唯一） */
-  async inbound(input: InboundInput): Promise<StockLot> {
+  async inbound(input: InboundInput, scope?: WarehouseScope): Promise<StockLot> {
     if (!input.requestId) throw new BizException('REQUEST_ID_REQUIRED', 'requestId is required');
+    this.assertWarehouseAccess(input.warehouseCode, scope);
     return this.idem.execute(input.requestId, 'inventory.inbound', async () => {
       return this.ds.transaction(async (em) => {
+        const location = await em.getRepository(Location).findOne({
+          where: { locationCode: input.locationCode },
+        });
+        if (!location) {
+          throw new BizException(
+            'LOCATION_NOT_FOUND',
+            `location ${input.locationCode} not found`,
+            404,
+          );
+        }
+        if (location.warehouseCode !== input.warehouseCode) {
+          throw new BizException(
+            'WAREHOUSE_LOCATION_MISMATCH',
+            `location ${input.locationCode} belongs to ${location.warehouseCode}`,
+          );
+        }
         const exists = await em.getRepository(StockLot).findOne({
           where: { packageNo: input.packageNo },
         });
@@ -123,13 +147,16 @@ export class InventoryService {
     docNo: string,
     requestId: string,
     operator?: string,
+    scope?: WarehouseScope,
   ): Promise<StockLot> {
     if (!Object.values(StockStatus).includes(toStatus)) {
       throw new BizException('INVALID_STOCK_STATUS', `Unknown status: ${toStatus}`);
     }
+    await this.assertLotAccess(packageNo, scope);
     return this.idem.execute(requestId, 'inventory.changeStatus', async () => {
       return this.ds.transaction(async (em) => {
         const lot = await this.mustGetLot(em, packageNo);
+        this.assertWarehouseAccess(lot.warehouseCode, scope);
         const fromStatus = lot.status;
         lot.status = toStatus;
         const saved = await em.getRepository(StockLot).save(lot);
@@ -156,12 +183,30 @@ export class InventoryService {
     docNo: string,
     requestId: string,
     operator?: string,
+    scope?: WarehouseScope,
   ): Promise<StockLot> {
+    await this.assertLotAccess(packageNo, scope);
+    const target = await this.ds.getRepository(Location).findOne({
+      where: { locationCode: toLocation },
+    });
+    if (!target) {
+      throw new BizException('LOCATION_NOT_FOUND', `location ${toLocation} not found`, 404);
+    }
+    this.assertWarehouseAccess(target.warehouseCode, scope);
     return this.idem.execute(requestId, 'inventory.moveLocation', async () => {
       return this.ds.transaction(async (em) => {
         const lot = await this.mustGetLot(em, packageNo);
+        this.assertWarehouseAccess(lot.warehouseCode, scope);
+        const target = await em.getRepository(Location).findOne({
+          where: { locationCode: toLocation },
+        });
+        if (!target) {
+          throw new BizException('LOCATION_NOT_FOUND', `location ${toLocation} not found`, 404);
+        }
+        this.assertWarehouseAccess(target.warehouseCode, scope);
         const fromLocation = lot.locationCode;
         lot.locationCode = toLocation;
+        lot.warehouseCode = target.warehouseCode;
         const saved = await em.getRepository(StockLot).save(lot);
         await this.recordMovement(em, {
           type: MovementType.MOVE,
@@ -186,12 +231,23 @@ export class InventoryService {
     prepDocNo: string,
     requestId: string,
     operator?: string,
+    scope?: WarehouseScope,
   ): Promise<StockOccupation[]> {
+    const scopedItems = items.map((item) => ({
+      ...item,
+      warehouseCode: this.resolveOperationWarehouse(item.warehouseCode, scope),
+    }));
     return this.idem.execute(requestId, 'inventory.occupy', async () => {
       return this.ds.transaction(async (em) => {
         const created: StockOccupation[] = [];
-        for (const item of items) {
-          const avail = await this.availableInTx(em, item.materialCode);
+        for (const item of scopedItems) {
+          const warehouseCode = item.warehouseCode;
+          const avail = await this.availableInTx(
+            em,
+            item.materialCode,
+            warehouseCode,
+            scope,
+          );
           if (avail.available < item.qty) {
             throw new BizException(
               'INSUFFICIENT_AVAILABLE',
@@ -202,6 +258,7 @@ export class InventoryService {
             em.getRepository(StockOccupation).create({
               workOrderId,
               materialCode: item.materialCode,
+              warehouseCode: warehouseCode ?? null,
               qty: item.qty,
               status: OccupationStatus.ACTIVE,
               prepDocNo,
@@ -215,7 +272,7 @@ export class InventoryService {
             docNo: prepDocNo,
             operator,
             requestId,
-            remark: `occupy ${item.qty} for WO ${workOrderId}`,
+            remark: `occupy ${item.qty} for WO ${workOrderId}${warehouseCode ? ` at ${warehouseCode}` : ''}`,
           });
         }
         return created;
@@ -224,13 +281,20 @@ export class InventoryService {
   }
 
   /** 释放占用（备料取消等）：ACTIVE → RELEASED，可用量回升 */
-  async releaseOccupation(prepDocNo: string, requestId?: string, operator?: string): Promise<number> {
+  async releaseOccupation(
+    prepDocNo: string,
+    requestId?: string,
+    operator?: string,
+    scope?: WarehouseScope,
+  ): Promise<number> {
+    await this.assertPrepAccess(prepDocNo, scope);
     const run = async () =>
       this.ds.transaction(async (em) => {
         const actives = await em.getRepository(StockOccupation).find({
           where: { prepDocNo, status: OccupationStatus.ACTIVE },
         });
         for (const occ of actives) {
+          this.assertOccupationAccess(occ, scope);
           occ.status = OccupationStatus.RELEASED;
           await em.getRepository(StockOccupation).save(occ);
           await this.recordMovement(em, {
@@ -256,21 +320,31 @@ export class InventoryService {
     prepDocNo: string,
     requestId?: string,
     operator?: string,
+    scope?: WarehouseScope,
   ): Promise<StockOccupation[]> {
+    await this.assertPrepAccess(prepDocNo, scope);
     const run = async () =>
       this.ds.transaction(async (em) => {
         const actives = await em.getRepository(StockOccupation).find({
           where: { prepDocNo, status: OccupationStatus.ACTIVE },
         });
         for (const occ of actives) {
+          this.assertOccupationAccess(occ, scope);
           let remaining = occ.qty;
-          const lots = await em.getRepository(StockLot).find({
-            where: [
-              { materialCode: occ.materialCode, status: StockStatus.STAGING },
-              { materialCode: occ.materialCode, status: StockStatus.QUALIFIED },
-            ],
-            order: { receivedAt: 'ASC' },
-          });
+          const lotQb = em
+            .getRepository(StockLot)
+            .createQueryBuilder('l')
+            .where('l.materialCode = :materialCode', { materialCode: occ.materialCode })
+            .andWhere('l.status IN (:...statuses)', {
+              statuses: [StockStatus.STAGING, StockStatus.QUALIFIED],
+            })
+            .orderBy('l.receivedAt', 'ASC');
+          if (occ.warehouseCode) {
+            lotQb.andWhere('l.warehouseCode = :warehouseCode', {
+              warehouseCode: occ.warehouseCode,
+            });
+          }
+          const lots = await lotQb.getMany();
           for (const lot of lots) {
             if (remaining <= 0) break;
             if (lot.qty <= 0) continue;
@@ -312,11 +386,14 @@ export class InventoryService {
     docNo: string,
     requestId: string,
     operator?: string,
+    scope?: WarehouseScope,
   ): Promise<StockLot> {
     if (newQty < 0) throw new BizException('INVALID_QTY', 'newQty must be >= 0');
+    await this.assertLotAccess(packageNo, scope);
     return this.idem.execute(requestId, 'inventory.adjust', async () => {
       return this.ds.transaction(async (em) => {
         const lot = await this.mustGetLot(em, packageNo);
+        this.assertWarehouseAccess(lot.warehouseCode, scope);
         const delta = newQty - lot.qty;
         lot.qty = newQty;
         const saved = await em.getRepository(StockLot).save(lot);
@@ -338,12 +415,18 @@ export class InventoryService {
   /**
    * 可用量查询：ΣQUALIFIED.qty − ΣACTIVE占用.qty − safetyStock
    */
-  async available(materialCode: string, warehouseCode?: string): Promise<AvailableResult> {
-    return this.availableInTx(this.ds.manager, materialCode, warehouseCode);
+  async available(
+    materialCode: string,
+    warehouseCode?: string,
+    scope?: WarehouseScope,
+  ): Promise<AvailableResult> {
+    if (warehouseCode) this.assertWarehouseAccess(warehouseCode, scope);
+    return this.availableInTx(this.ds.manager, materialCode, warehouseCode, scope);
   }
 
   /** 批次查询 */
-  async queryLots(filter: LotFilter): Promise<StockLot[]> {
+  async queryLots(filter: LotFilter, scope?: WarehouseScope): Promise<StockLot[]> {
+    if (filter.warehouseCode) this.assertWarehouseAccess(filter.warehouseCode, scope);
     const qb = this.lotRepo.createQueryBuilder('l').orderBy('l.receivedAt', 'ASC');
     if (filter.materialCode) qb.andWhere('l.materialCode = :materialCode', filter);
     if (filter.warehouseCode) qb.andWhere('l.warehouseCode = :warehouseCode', filter);
@@ -351,6 +434,7 @@ export class InventoryService {
     if (filter.status) qb.andWhere('l.status = :status', filter);
     if (filter.batchNo) qb.andWhere('l.batchNo = :batchNo', filter);
     if (filter.workOrderId) qb.andWhere('l.workOrderId = :workOrderId', filter);
+    this.applyWarehouseScope(qb, 'l.warehouseCode', scope);
     return qb.getMany();
   }
 
@@ -360,6 +444,7 @@ export class InventoryService {
     em: EntityManager,
     materialCode: string,
     warehouseCode?: string,
+    scope?: WarehouseScope,
   ): Promise<AvailableResult> {
     const lotQb = em
       .getRepository(StockLot)
@@ -368,6 +453,7 @@ export class InventoryService {
       .where('l.materialCode = :materialCode', { materialCode })
       .andWhere('l.status = :st', { st: StockStatus.QUALIFIED });
     if (warehouseCode) lotQb.andWhere('l.warehouseCode = :warehouseCode', { warehouseCode });
+    this.applyWarehouseScope(lotQb, 'l.warehouseCode', scope);
     const qualifiedQty = Number((await lotQb.getRawOne())?.sum ?? 0);
 
     const occQb = em
@@ -376,6 +462,10 @@ export class InventoryService {
       .select('COALESCE(SUM(o.qty), 0)', 'sum')
       .where('o.materialCode = :materialCode', { materialCode })
       .andWhere('o.status = :os', { os: OccupationStatus.ACTIVE });
+    if (warehouseCode) {
+      occQb.andWhere('o.warehouseCode = :warehouseCode', { warehouseCode });
+    }
+    this.applyWarehouseScope(occQb, 'o.warehouseCode', scope);
     const occupiedQty = Number((await occQb.getRawOne())?.sum ?? 0);
 
     const material = await em.getRepository(Material).findOne({ where: { materialCode } });
@@ -395,6 +485,91 @@ export class InventoryService {
     const lot = await em.getRepository(StockLot).findOne({ where: { packageNo } });
     if (!lot) throw new BizException('LOT_NOT_FOUND', `packageNo ${packageNo} not found`, 404);
     return lot;
+  }
+
+  private resolveOperationWarehouse(
+    requested: string | undefined,
+    scope?: WarehouseScope,
+  ): string | undefined {
+    if (requested) {
+      this.assertWarehouseAccess(requested, scope);
+      return requested;
+    }
+    if (!scope || scope.allWarehouseAccess) return undefined;
+    if (scope.warehouseCodes.length === 1) return scope.warehouseCodes[0];
+    throw new BizException(
+      'WAREHOUSE_REQUIRED',
+      'warehouseCode is required when the user has zero or multiple warehouse scopes',
+    );
+  }
+
+  private async assertLotAccess(
+    packageNo: string,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    const lot = await this.lotRepo.findOne({ where: { packageNo } });
+    if (!lot) {
+      throw new BizException('LOT_NOT_FOUND', `packageNo ${packageNo} not found`, 404);
+    }
+    this.assertWarehouseAccess(lot.warehouseCode, scope);
+  }
+
+  private async assertPrepAccess(
+    prepDocNo: string,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    const occupations = await this.occRepo.find({
+      where: { prepDocNo },
+    });
+    for (const occupation of occupations) {
+      this.assertOccupationAccess(occupation, scope);
+    }
+  }
+
+  private assertOccupationAccess(
+    occupation: StockOccupation,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    if (!occupation.warehouseCode) {
+      throw new BizException(
+        'WAREHOUSE_SCOPE_FORBIDDEN',
+        'Historical occupation without warehouse ownership cannot be operated by a scoped user',
+        403,
+      );
+    }
+    this.assertWarehouseAccess(occupation.warehouseCode, scope);
+  }
+
+  private assertWarehouseAccess(
+    warehouseCode: string,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    if (!scope.warehouseCodes.includes(warehouseCode)) {
+      throw new BizException(
+        'WAREHOUSE_SCOPE_FORBIDDEN',
+        `No data access to warehouse ${warehouseCode}`,
+        403,
+      );
+    }
+  }
+
+  private applyWarehouseScope(
+    qb: { andWhere: (sql: string, params?: Record<string, unknown>) => unknown },
+    column: string,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    if (!scope.warehouseCodes.length) {
+      qb.andWhere('1 = 0');
+      return;
+    }
+    qb.andWhere(`${column} IN (:...scopeWarehouseCodes)`, {
+      scopeWarehouseCodes: scope.warehouseCodes,
+    });
   }
 
   private async recordMovement(

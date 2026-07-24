@@ -40,8 +40,8 @@ http.interceptors.response.use(
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem('wms-user')
       if (!location.pathname.startsWith('/login')) {
-        const { default: router } = await import('@/router')
-        router.push({ path: '/login', query: { redirect: location.pathname } })
+        const redirect = `${location.pathname}${location.search}${location.hash}`
+        location.assign(`/login?redirect=${encodeURIComponent(redirect)}`)
       }
       ElMessage.error('登录已过期，请重新登录')
       return Promise.reject(err)

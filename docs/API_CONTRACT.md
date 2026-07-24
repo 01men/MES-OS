@@ -8,6 +8,7 @@
 - Mock U8 前缀：`/mock-u8`，公开且不经过 `/api`
 - 认证：`Authorization: Bearer <JWT>`
 - 写请求幂等：`X-Request-Id: <unique-id>`
+- 幂等缓存按“登录用户 + 当前仓库范围 + 业务键”隔离；请求号不能跨用户复用响应
 - 离线重放：可传稳定的 `X-Task-No`；服务端会将其归一化为 `X-Request-Id`
 - 成功响应：直接返回业务对象或列表
 - 失败响应：`{ code, message, requestId }`
@@ -23,7 +24,8 @@
     "username": "admin",
     "name": "系统管理员",
     "roles": ["ADMIN"],
-    "perms": ["*"]
+    "perms": ["*"],
+    "warehouseCodes": []
   }
 }
 ```
@@ -44,6 +46,7 @@
 | GET | `/rbac/permissions` | `rbac.read` | 权限目录 |
 | GET | `/rbac/temp-grants` | `rbac.read` | 临时授权及到期时间 |
 | POST | `/rbac/users/:userId/roles` | `rbac.write` | `{roles:[roleId或code]}`，写审计日志 |
+| POST | `/rbac/users/:userId/warehouses` | `rbac.write` | `{warehouseCodes:["WH01"]}`；去重、校验仓库并写审计 |
 | POST | `/rbac/temp-grants` | `rbac.write` | `{userId,permissionCode,expiresAt}`；禁止临时授予 `*` |
 | DELETE | `/rbac/temp-grants/:id` | `rbac.write` | 撤销后立即失效并写审计 |
 | POST | `/rbac/users/:userId/dingtalk/unbind` | `rbac.write` | 管理员解绑指定用户 |
@@ -51,6 +54,13 @@
 钉钉服务端配置：`MES_DINGTALK_CLIENT_ID`、`MES_DINGTALK_CLIENT_SECRET`、`MES_PUBLIC_ORIGIN`。公开回调地址必须与钉钉应用登记地址一致。钉钉身份只允许绑定已有 MES 用户；首次出现的 unionId 不会自动创建账号或角色。
 
 权限说明：控制器上声明 `@RequirePerm` 的接口由权限守卫校验；其余业务接口当前主要由登录态及服务层岗位/状态机规则校验。前端 `meta.perm` 仅用于菜单和路由可见性，不能替代服务端授权。
+
+仓库数据范围说明：
+
+- `ADMIN` 或拥有 `DataScope.ALL` 的角色不受仓库范围限制；其他 WMS 岗位按用户的 `warehouseCodes` 过滤。
+- 空仓库范围表示不能访问任何仓库；范围变更从下一次请求立即生效，不需要重新签发 JWT。
+- 库存、到货单、仓库和库位列表会自动过滤；显式读取或写入未授权仓库返回 `403 / WAREHOUSE_SCOPE_FORBIDDEN`。
+- 入库必须校验库位存在且属于指定仓库；跨仓移库同时校验源仓和目标仓，并同步更新批次的仓库编码。
 
 ## 审批、审计、规则
 
@@ -78,13 +88,13 @@
 | POST | `/receiving/orders/sync` | 从 Mock U8 拉取采购订单 |
 | GET | `/receiving/orders` | 采购订单 |
 | POST | `/receiving/arrivals` | 创建到货暂存，幂等 |
-| GET | `/receiving/arrivals` | 可按状态过滤 |
+| GET | `/receiving/arrivals` | 可按状态过滤，并自动应用仓库范围 |
 | POST | `/receiving/:id/send-inspect` | 送检 |
 | POST | `/receiving/:id/iqc` | IQC 判定 |
 | POST | `/receiving/:id/confirm` | 确认入库 |
 | POST | `/receiving/labels/reprint` | 补打原因必填 |
-| GET | `/inventory/lots` | 库存批次查询 |
-| GET | `/inventory/available/:materialCode` | 合格量、占用、安全库存、可用量 |
+| GET | `/inventory/lots` | 库存批次查询，自动应用仓库范围 |
+| GET | `/inventory/available/:materialCode` | 合格量、占用、安全库存、可用量；支持 `warehouseCode` |
 | POST | `/inventory/inbound|move|status|occupy|release|consume|adjust` | 写请求必须带幂等键 |
 
 可用量口径：`QUALIFIED 合格量 - ACTIVE 占用量 - safetyStock`。

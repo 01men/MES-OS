@@ -3,7 +3,10 @@ import { InventoryService, InboundInput, OccupyItem } from './inventory.service'
 import { StockStatus } from '../../common/enums';
 import { BizException } from '../../common/exceptions';
 import { RequirePerm } from '../rbac/require-perm.decorator';
-import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentUserPayload,
+} from '../auth/current-user.decorator';
 
 function reqId(header: string | undefined, body?: any): string {
   const id = header || body?.requestId;
@@ -20,9 +23,12 @@ export class InventoryController {
   inbound(
     @Body() body: Omit<InboundInput, 'requestId' | 'operator'> & { requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.inbound({ ...body, requestId: reqId(rid, body), operator });
+    return this.inv.inbound(
+      { ...body, requestId: reqId(rid, body), operator: actor.username },
+      actor,
+    );
   }
 
   @Post('status')
@@ -30,9 +36,16 @@ export class InventoryController {
   changeStatus(
     @Body() body: { packageNo: string; toStatus: StockStatus; docNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.changeStatus(body.packageNo, body.toStatus, body.docNo, reqId(rid, body), operator);
+    return this.inv.changeStatus(
+      body.packageNo,
+      body.toStatus,
+      body.docNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Post('move')
@@ -40,9 +53,16 @@ export class InventoryController {
   move(
     @Body() body: { packageNo: string; toLocation: string; docNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.moveLocation(body.packageNo, body.toLocation, body.docNo, reqId(rid, body), operator);
+    return this.inv.moveLocation(
+      body.packageNo,
+      body.toLocation,
+      body.docNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Post('occupy')
@@ -50,9 +70,16 @@ export class InventoryController {
   occupy(
     @Body() body: { workOrderId: string; items: OccupyItem[]; prepDocNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.occupy(body.workOrderId, body.items, body.prepDocNo, reqId(rid, body), operator);
+    return this.inv.occupy(
+      body.workOrderId,
+      body.items,
+      body.prepDocNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Post('release')
@@ -60,9 +87,14 @@ export class InventoryController {
   release(
     @Body() body: { prepDocNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.releaseOccupation(body.prepDocNo, reqId(rid, body), operator);
+    return this.inv.releaseOccupation(
+      body.prepDocNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Post('consume')
@@ -70,9 +102,14 @@ export class InventoryController {
   consume(
     @Body() body: { prepDocNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.consumeOccupation(body.prepDocNo, reqId(rid, body), operator);
+    return this.inv.consumeOccupation(
+      body.prepDocNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Post('adjust')
@@ -80,20 +117,32 @@ export class InventoryController {
   adjust(
     @Body() body: { packageNo: string; newQty: number; reason: string; docNo: string; requestId?: string },
     @Headers('x-request-id') rid: string,
-    @CurrentUser('username') operator: string,
+    @CurrentUser() actor: CurrentUserPayload,
   ) {
-    return this.inv.adjust(body.packageNo, body.newQty, body.reason, body.docNo, reqId(rid, body), operator);
+    return this.inv.adjust(
+      body.packageNo,
+      body.newQty,
+      body.reason,
+      body.docNo,
+      reqId(rid, body),
+      actor.username,
+      actor,
+    );
   }
 
   @Get('available/:materialCode')
   @RequirePerm('inventory.read')
-  available(@Param('materialCode') materialCode: string, @Query('warehouseCode') warehouseCode?: string) {
-    return this.inv.available(materialCode, warehouseCode);
+  available(
+    @Param('materialCode') materialCode: string,
+    @CurrentUser() actor: CurrentUserPayload,
+    @Query('warehouseCode') warehouseCode?: string,
+  ) {
+    return this.inv.available(materialCode, warehouseCode, actor);
   }
 
   @Get('lots')
   @RequirePerm('inventory.read')
-  lots(@Query() filter: any) {
-    return this.inv.queryLots(filter);
+  lots(@Query() filter: any, @CurrentUser() actor: CurrentUserPayload) {
+    return this.inv.queryLots(filter, actor);
   }
 }

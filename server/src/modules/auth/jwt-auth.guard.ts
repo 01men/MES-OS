@@ -10,6 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { User } from '../rbac/entities/user.entity';
+import { DataScope } from '../../common/enums';
 
 /**
  * 全局 JWT 守卫：除 @Public() 接口外一律要求 Bearer token。
@@ -57,6 +58,11 @@ export class JwtAuthGuard implements CanActivate {
       name: user.name,
       roles: (user.roles ?? []).map((r) => r.code),
       permissions: [...permissions],
+      dataScopes: [...new Set((user.roles ?? []).map((r) => r.dataScope))],
+      warehouseCodes: [...new Set(user.warehouseCodes ?? [])],
+      allWarehouseAccess:
+        permissions.has('*') ||
+        (user.roles ?? []).some((r) => r.dataScope === DataScope.ALL),
     };
     return true;
   }

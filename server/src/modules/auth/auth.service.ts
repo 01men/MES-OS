@@ -48,6 +48,7 @@ export class AuthService {
         perms: [...permissions],
         dingtalkBound: Boolean(user.dingtalkUnionId),
         avatarUrl: user.dingtalkAvatarUrl,
+        warehouseCodes: user.warehouseCodes ?? [],
       },
     };
   }

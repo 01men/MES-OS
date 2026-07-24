@@ -8,6 +8,7 @@ import { StockLot } from '../../src/modules/inventory/entities/stock-lot.entity'
 import { StockOccupation } from '../../src/modules/inventory/entities/stock-occupation.entity';
 import { StockMovement } from '../../src/modules/inventory/entities/stock-movement.entity';
 import { Material } from '../../src/modules/masterdata/entities/material.entity';
+import { Location } from '../../src/modules/masterdata/entities/location.entity';
 import { MovementType, OccupationStatus, StockStatus } from '../../src/common/enums';
 
 describe('InventoryService 库存核心', () => {
@@ -36,6 +37,7 @@ describe('InventoryService 库存核心', () => {
     occRepo = ds.getRepository(StockOccupation);
     movRepo = ds.getRepository(StockMovement);
     const materialRepo = ds.getRepository(Material);
+    const locationRepo = ds.getRepository(Location);
     await materialRepo.save(
       materialRepo.create({
         materialCode: 'M1',
@@ -47,6 +49,20 @@ describe('InventoryService 库存核心', () => {
         specialStatus: 'NORMAL',
       } as any),
     );
+    await locationRepo.save([
+      locationRepo.create({
+        locationCode: 'WH01-A-01',
+        warehouseCode: 'WH01',
+        areaCode: 'A',
+        name: 'A区01位',
+      }),
+      locationRepo.create({
+        locationCode: 'WH01-B-01',
+        warehouseCode: 'WH01',
+        areaCode: 'B',
+        name: 'B区01位',
+      }),
+    ]);
     const idem = new IdempotencyService(ds.getRepository(IdempotencyRecord));
     inv = new InventoryService(lotRepo, occRepo, movRepo, materialRepo, ds, idem);
   });

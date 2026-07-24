@@ -33,6 +33,12 @@ class CreateTempGrantDto {
   expiresAt: string;
 }
 
+class AssignUserWarehousesDto {
+  @IsArray()
+  @IsString({ each: true })
+  warehouseCodes: string[];
+}
+
 @Controller('rbac')
 export class RbacController {
   constructor(private readonly service: RbacService) {}
@@ -69,6 +75,20 @@ export class RbacController {
     @CurrentUser() operator: CurrentUserPayload,
   ) {
     return this.service.assignUserRoles(userId, body.roles, operator);
+  }
+
+  @Post('users/:userId/warehouses')
+  @RequirePerm('rbac.write')
+  assignUserWarehouses(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() body: AssignUserWarehousesDto,
+    @CurrentUser() operator: CurrentUserPayload,
+  ) {
+    return this.service.assignUserWarehouses(
+      userId,
+      body.warehouseCodes,
+      operator,
+    );
   }
 
   @Post('temp-grants')

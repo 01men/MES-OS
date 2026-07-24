@@ -6,6 +6,7 @@ import { Permission } from './entities/permission.entity';
 import { TempGrant } from './entities/temp-grant.entity';
 import { RbacController } from './rbac.controller';
 import { RbacService } from './rbac.service';
+import { Warehouse } from '../masterdata/entities/warehouse.entity';
 
 export const RBAC_ENTITIES = [User, Role, Permission, TempGrant];
 
@@ -14,7 +15,7 @@ export const RBAC_ENTITIES = [User, Role, Permission, TempGrant];
  * 全局守卫由 AuthModule 统一按序注册（JwtAuthGuard → PermissionGuard）。
  */
 @Module({
-  imports: [TypeOrmModule.forFeature(RBAC_ENTITIES)],
+  imports: [TypeOrmModule.forFeature([...RBAC_ENTITIES, Warehouse])],
   controllers: [RbacController],
   providers: [RbacService],
   exports: [TypeOrmModule, RbacService],

@@ -10,6 +10,7 @@ export interface RbacUser {
   name?: string
   roles?: string[] | { id: number; code?: string; name: string }[]
   dingtalkBound?: boolean
+  warehouseCodes?: string[]
   [k: string]: unknown
 }
 
@@ -39,6 +40,11 @@ export interface TempGrant {
   expiresAt?: string
   expireAt?: string
   [k: string]: unknown
+}
+
+export interface WarehouseOption {
+  warehouseCode: string
+  name?: string
 }
 
 export interface AuditLog {
@@ -91,6 +97,14 @@ export function listTempGrants() {
 
 export function assignUserRoles(userId: number, roles: (number | string)[]) {
   return http.post(`/rbac/users/${userId}/roles`, { roles })
+}
+
+export function assignUserWarehouses(userId: number, warehouseCodes: string[]) {
+  return http.post(`/rbac/users/${userId}/warehouses`, { warehouseCodes })
+}
+
+export function listWarehouses() {
+  return http.get<WarehouseOption[]>('/masterdata/warehouses')
 }
 
 export function createTempGrant(body: {

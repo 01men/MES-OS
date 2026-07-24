@@ -41,6 +41,13 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   dingtalkBoundAt: Date | null;
 
+  /**
+   * WMS 仓库数据范围。空数组表示不允许访问任何仓库；
+   * 管理员或拥有 ALL 数据范围的角色不受该字段限制。
+   */
+  @Column({ type: 'simple-json', nullable: true })
+  warehouseCodes: string[] | null;
+
   @ManyToMany(() => Role, (r) => r.users, { eager: true })
   @JoinTable({ name: 'rbac_user_role' })
   roles: Role[];

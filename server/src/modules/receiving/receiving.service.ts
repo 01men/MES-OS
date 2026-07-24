@@ -8,10 +8,14 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { AuditService } from '../../common/audit/audit.service';
 import { ApprovalEngineService } from '../../common/approval/approval.service';
 import { RuleConfigService } from '../config/rule-config.service';
-import { InventoryService } from '../inventory/inventory.service';
+import {
+  InventoryService,
+  WarehouseScope,
+} from '../inventory/inventory.service';
 import { SyncService } from '../integration/sync.service';
 import { U8Adapter } from '../integration/u8-adapter';
 import { Material } from '../masterdata/entities/material.entity';
+import { Location } from '../masterdata/entities/location.entity';
 import {
   PoOrderType,
   RcvPurchaseOrder,
@@ -234,7 +238,14 @@ export class ReceivingService {
 
   // ---------- 第一步：创建到货暂存单 ----------
 
-  async createArrival(input: CreateArrivalInput, requestId: string, operator: string) {
+  async createArrival(
+    input: CreateArrivalInput,
+    requestId: string,
+    operator: string,
+    scope?: WarehouseScope,
+  ) {
+    this.assertWarehouseAccess(input.warehouseCode, scope);
+    await this.assertLocationWarehouse(input.locationCode, input.warehouseCode);
     return this.idem.execute(requestId, 'receiving.arrival', async () => {
       const { po, line } = await this.mustGetOpenPoLine(input.poNo, input.materialCode);
       const material = await this.mustGetMaterial(input.materialCode);
@@ -351,7 +362,13 @@ export class ReceivingService {
 
   // ---------- 第二步：送检 ----------
 
-  async sendInspect(id: number, requestId: string, operator: string) {
+  async sendInspect(
+    id: number,
+    requestId: string,
+    operator: string,
+    scope?: WarehouseScope,
+  ) {
+    await this.assertArrivalAccess(id, scope);
     return this.idem.execute(requestId, 'receiving.sendInspect', async () => {
       const arrival = await this.mustGetArrival(id);
       if (arrival.status !== ArrivalStatus.ARRIVED) {
@@ -374,7 +391,14 @@ export class ReceivingService {
 
   // ---------- 第三步：IQC 判定（REQ-002 全部/部分/特采 + 数量守恒 + NCR + MRB 会签） ----------
 
-  async submitIqc(id: number, input: IqcInput, requestId: string, operator: string) {
+  async submitIqc(
+    id: number,
+    input: IqcInput,
+    requestId: string,
+    operator: string,
+    scope?: WarehouseScope,
+  ) {
+    await this.assertArrivalAccess(id, scope);
     return this.idem.execute(requestId, 'receiving.iqc', async () => {
       const arrival = await this.mustGetArrival(id);
       if (arrival.status !== ArrivalStatus.INSPECTING) {
@@ -458,7 +482,14 @@ export class ReceivingService {
 
   // ---------- 确认入库/隔离（合格→QUALIFIED；不合格→ISOLATED；入队同步 U8） ----------
 
-  async confirm(id: number, input: ConfirmInput, requestId: string, operator: string) {
+  async confirm(
+    id: number,
+    input: ConfirmInput,
+    requestId: string,
+    operator: string,
+    scope?: WarehouseScope,
+  ) {
+    await this.assertArrivalAccess(id, scope);
     return this.idem.execute(requestId, 'receiving.confirm', async () => {
       const arrival = await this.mustGetArrival(id);
       if (arrival.status !== ArrivalStatus.INSPECTED) {
@@ -521,7 +552,7 @@ export class ReceivingService {
           sourceDocNo: arrival.arrivalNo,
           requestId: `${requestId}:post:q`,
           operator,
-        });
+        }, scope);
         postings.push({ packageNo: lot.packageNo, qty: q, status: 'QUALIFIED', concession: false, ...basePosting });
       }
       // 特采 → QUALIFIED 但打 concession 标（独立包装号）
@@ -539,7 +570,7 @@ export class ReceivingService {
           sourceDocNo: arrival.arrivalNo,
           requestId: `${requestId}:post:c`,
           operator,
-        });
+        }, scope);
         postings.push({ packageNo: lot.packageNo, qty: c, status: 'QUALIFIED', concession: true, ...basePosting });
       }
       // 不合格 → ISOLATED（独立包装号）
@@ -556,7 +587,7 @@ export class ReceivingService {
           sourceDocNo: arrival.arrivalNo,
           requestId: `${requestId}:post:r`,
           operator,
-        });
+        }, scope);
         postings.push({ packageNo: lot.packageNo, qty: r, status: 'ISOLATED', concession: false, ...basePosting });
       }
 
@@ -603,13 +634,23 @@ export class ReceivingService {
 
   // ---------- 查询 ----------
 
-  async listArrivals(status?: ArrivalStatus) {
-    const where = status ? { status } : {};
-    return this.arrivalRepo.find({ where, order: { id: 'DESC' } });
+  async listArrivals(status?: ArrivalStatus, scope?: WarehouseScope) {
+    const qb = this.arrivalRepo
+      .createQueryBuilder('arrival')
+      .orderBy('arrival.id', 'DESC');
+    if (status) qb.andWhere('arrival.status = :status', { status });
+    if (scope && !scope.allWarehouseAccess) {
+      if (!scope.warehouseCodes.length) return [];
+      qb.andWhere('arrival.warehouseCode IN (:...warehouseCodes)', {
+        warehouseCodes: scope.warehouseCodes,
+      });
+    }
+    return qb.getMany();
   }
 
-  async getArrival(id: number) {
+  async getArrival(id: number, scope?: WarehouseScope) {
     const arrival = await this.mustGetArrival(id);
+    this.assertWarehouseAccess(arrival.warehouseCode, scope);
     const labelLogs = await this.labelRepo.find({
       where: { arrivalNo: arrival.arrivalNo },
       order: { id: 'ASC' },
@@ -625,8 +666,19 @@ export class ReceivingService {
 
   // ---------- REQ-001 补打（原因必填，记日志） ----------
 
-  async reprintLabel(packageNo: string, reason: string | undefined, requestId: string, operator: string) {
+  async reprintLabel(
+    packageNo: string,
+    reason: string | undefined,
+    requestId: string,
+    operator: string,
+    scope?: WarehouseScope,
+  ) {
     if (!reason) throw new BizException('REPRINT_REASON_REQUIRED', '补打原因必填');
+    const scopedArrival = await this.arrivalRepo.findOne({ where: { packageNo } });
+    if (!scopedArrival) {
+      throw new BizException('PACKAGE_NOT_FOUND', `包装号 ${packageNo} 不存在`, 404);
+    }
+    this.assertWarehouseAccess(scopedArrival.warehouseCode, scope);
     return this.idem.execute(requestId, 'receiving.label.reprint', async () => {
       const arrival = await this.arrivalRepo.findOne({ where: { packageNo } });
       if (!arrival) throw new BizException('PACKAGE_NOT_FOUND', `包装号 ${packageNo} 不存在`, 404);
@@ -659,6 +711,47 @@ export class ReceivingService {
     const arrival = await this.arrivalRepo.findOne({ where: { id } });
     if (!arrival) throw new BizException('ARRIVAL_NOT_FOUND', `到货单 ${id} 不存在`, 404);
     return arrival;
+  }
+
+  private async assertArrivalAccess(
+    id: number,
+    scope?: WarehouseScope,
+  ): Promise<void> {
+    if (!scope || scope.allWarehouseAccess) return;
+    const arrival = await this.mustGetArrival(id);
+    this.assertWarehouseAccess(arrival.warehouseCode, scope);
+  }
+
+  private async assertLocationWarehouse(
+    locationCode: string,
+    warehouseCode: string,
+  ) {
+    const location = await this.ds.getRepository(Location).findOne({
+      where: { locationCode },
+    });
+    if (!location) {
+      throw new BizException('LOCATION_NOT_FOUND', `location ${locationCode} not found`, 404);
+    }
+    if (location.warehouseCode !== warehouseCode) {
+      throw new BizException(
+        'WAREHOUSE_LOCATION_MISMATCH',
+        `location ${locationCode} belongs to ${location.warehouseCode}`,
+      );
+    }
+  }
+
+  private assertWarehouseAccess(
+    warehouseCode: string,
+    scope?: WarehouseScope,
+  ) {
+    if (!scope || scope.allWarehouseAccess) return;
+    if (!scope.warehouseCodes.includes(warehouseCode)) {
+      throw new BizException(
+        'WAREHOUSE_SCOPE_FORBIDDEN',
+        `No data access to warehouse ${warehouseCode}`,
+        403,
+      );
+    }
   }
 
   private async mustGetMaterial(materialCode: string): Promise<Material> {

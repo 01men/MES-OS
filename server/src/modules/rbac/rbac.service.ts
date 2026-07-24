@@ -8,6 +8,7 @@ import { Permission } from './entities/permission.entity';
 import { Role } from './entities/role.entity';
 import { TempGrant } from './entities/temp-grant.entity';
 import { User } from './entities/user.entity';
+import { Warehouse } from '../masterdata/entities/warehouse.entity';
 
 @Injectable()
 export class RbacService {
@@ -20,6 +21,8 @@ export class RbacService {
     private readonly permissionRepo: Repository<Permission>,
     @InjectRepository(TempGrant)
     private readonly grantRepo: Repository<TempGrant>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepo: Repository<Warehouse>,
     private readonly audit: AuditService,
   ) {}
 
@@ -31,6 +34,7 @@ export class RbacService {
       name: user.name,
       disabled: user.disabled,
       dingtalkBound: Boolean(user.dingtalkUnionId),
+      warehouseCodes: user.warehouseCodes ?? [],
       roles: (user.roles ?? []).map((role) => ({
         id: role.id,
         code: role.code,
@@ -233,6 +237,52 @@ export class RbacService {
         code: role.code,
         name: role.name,
       })),
+    };
+  }
+
+  async assignUserWarehouses(
+    userId: number,
+    requestedCodes: string[],
+    operator: CurrentUserPayload,
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new BizException('RBAC_USER_NOT_FOUND', `User ${userId} not found`, 404);
+    }
+
+    const normalized = [
+      ...new Set((requestedCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean)),
+    ].sort();
+    const warehouses = normalized.length
+      ? await this.warehouseRepo.find({
+          where: normalized.map((warehouseCode) => ({ warehouseCode })),
+        })
+      : [];
+    const existing = new Set(warehouses.map((warehouse) => warehouse.warehouseCode));
+    const unknown = normalized.filter((code) => !existing.has(code));
+    if (unknown.length) {
+      throw new BizException(
+        'RBAC_WAREHOUSE_NOT_FOUND',
+        `Unknown warehouse(s): ${unknown.join(', ')}`,
+      );
+    }
+
+    const before = [...(user.warehouseCodes ?? [])].sort();
+    user.warehouseCodes = normalized;
+    await this.userRepo.save(user);
+    await this.audit.log({
+      operator: operator.username,
+      role: operator.roles.join(','),
+      action: 'rbac.user.warehouses.assign',
+      docNo: user.username,
+      before: { warehouseCodes: before },
+      after: { warehouseCodes: normalized },
+      result: 'SUCCESS',
+    });
+    return {
+      id: user.id,
+      username: user.username,
+      warehouseCodes: normalized,
     };
   }
 }

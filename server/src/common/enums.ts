@@ -88,6 +88,7 @@ export enum PermissionType {
 /** 数据范围 */
 export enum DataScope {
   ALL = 'ALL',
+  WAREHOUSE = 'WAREHOUSE',
   DEPT = 'DEPT',
   SELF = 'SELF',
 }
