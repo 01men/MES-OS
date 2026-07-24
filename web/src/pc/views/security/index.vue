@@ -7,10 +7,14 @@ import {
   listPermissions,
   listTempGrants,
   assignUserRoles,
+  createTempGrant,
+  revokeTempGrant,
+  unbindUserDingTalk,
   listAuditLogs,
   exportAuditLogs,
   type RbacUser,
   type RbacRole,
+  type RbacPermission,
   type TempGrant,
   type AuditLog
 } from '@/api/security2'
@@ -32,6 +36,7 @@ function roleKey(r: unknown): string | number {
 /* ---------- Tab1 权限管理 ---------- */
 const users = ref<RbacUser[]>([])
 const roles = ref<RbacRole[]>([])
+const permissions = ref<RbacPermission[]>([])
 const tempGrants = ref<TempGrant[]>([])
 const rbacLoading = ref(false)
 /** 用户 id → 编辑中的角色选择 */
@@ -40,9 +45,10 @@ const roleSelection = reactive<Record<string, (string | number)[]>>({})
 async function loadRbac() {
   rbacLoading.value = true
   try {
-    const [u, r] = await Promise.all([listUsers(), listRoles()])
+    const [u, r, p] = await Promise.all([listUsers(), listRoles(), listPermissions()])
     users.value = u.data
     roles.value = r.data
+    permissions.value = p.data
     users.value.forEach((user) => {
       roleSelection[String(user.id)] = (user.roles ?? []).map((x) => roleKey(x))
     })
@@ -55,6 +61,52 @@ async function loadRbac() {
   } finally {
     rbacLoading.value = false
   }
+}
+
+const grantDialog = ref(false)
+const granting = ref(false)
+const grantForm = reactive({
+  userId: undefined as number | undefined,
+  permissionCode: '',
+  hours: 4
+})
+
+async function submitGrant() {
+  if (!grantForm.userId || !grantForm.permissionCode || grantForm.hours <= 0) {
+    ElMessage.warning('请选择用户、权限并填写有效时长')
+    return
+  }
+  granting.value = true
+  try {
+    await createTempGrant({
+      userId: grantForm.userId,
+      permissionCode: grantForm.permissionCode,
+      expiresAt: new Date(Date.now() + grantForm.hours * 3600000).toISOString()
+    })
+    ElMessage.success('临时授权已生效并写入审计')
+    grantDialog.value = false
+    await loadRbac()
+  } finally {
+    granting.value = false
+  }
+}
+
+async function revokeGrant(row: TempGrant) {
+  await ElMessageBox.confirm(`确认撤销临时权限 ${grantText.value(row)}？`, '撤销授权', {
+    type: 'warning'
+  })
+  await revokeTempGrant(row.id)
+  ElMessage.success('临时授权已撤销')
+  await loadRbac()
+}
+
+async function unbindDingTalk(row: RbacUser) {
+  await ElMessageBox.confirm(`确认解除 ${row.username} 的钉钉绑定？`, '钉钉账号', {
+    type: 'warning'
+  })
+  await unbindUserDingTalk(row.id)
+  ElMessage.success('钉钉绑定已解除')
+  await loadRbac()
 }
 
 const savingUser = ref<string | null>(null)
@@ -190,7 +242,14 @@ onMounted(() => {
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right">
+            <el-table-column label="钉钉" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.dingtalkBound ? 'success' : 'info'" size="small">
+                  {{ row.dingtalkBound ? '已绑定' : '未绑定' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="190" fixed="right">
               <template #default="{ row }">
                 <el-button
                   type="primary"
@@ -199,6 +258,15 @@ onMounted(() => {
                   @click="saveRoles(row)"
                 >
                   保存
+                </el-button>
+                <el-button
+                  v-if="row.dingtalkBound"
+                  type="danger"
+                  link
+                  size="small"
+                  @click="unbindDingTalk(row)"
+                >
+                  解绑
                 </el-button>
               </template>
             </el-table-column>
@@ -228,7 +296,12 @@ onMounted(() => {
           </el-col>
           <el-col :span="10">
             <el-card>
-              <template #header>临时授权</template>
+              <template #header>
+                <div style="display: flex; justify-content: space-between; align-items: center">
+                  <span>临时授权</span>
+                  <el-button type="primary" size="small" @click="grantDialog = true">新增</el-button>
+                </div>
+              </template>
               <el-table v-if="tempGrants.length" :data="tempGrants" border stripe size="small">
                 <el-table-column label="用户" min-width="110">
                   <template #default="{ row }">{{ row.username ?? row.userId ?? '-' }}</template>
@@ -238,6 +311,11 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="到期时间" min-width="150">
                   <template #default="{ row }">{{ row.expiresAt || row.expireAt || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="70" fixed="right">
+                  <template #default="{ row }">
+                    <el-button type="danger" link size="small" @click="revokeGrant(row)">撤销</el-button>
+                  </template>
                 </el-table-column>
               </el-table>
               <el-alert v-else type="info" :closable="false" show-icon>
@@ -318,6 +396,38 @@ onMounted(() => {
         </el-card>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="grantDialog" title="新增临时授权" width="460px">
+      <el-form label-width="90px">
+        <el-form-item label="用户">
+          <el-select v-model="grantForm.userId" filterable style="width: 100%">
+            <el-option
+              v-for="u in users"
+              :key="u.id"
+              :label="`${u.name || u.username}（${u.username}）`"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="权限">
+          <el-select v-model="grantForm.permissionCode" filterable style="width: 100%">
+            <el-option
+              v-for="p in permissions.filter((item) => item.code !== '*')"
+              :key="p.id"
+              :label="`${p.name || p.code}（${p.code}）`"
+              :value="p.code"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="有效小时">
+          <el-input-number v-model="grantForm.hours" :min="1" :max="168" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="grantDialog = false">取消</el-button>
+        <el-button type="primary" :loading="granting" @click="submitGrant">确认授权</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 

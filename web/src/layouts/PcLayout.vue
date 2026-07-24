@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getAuthConfig, getDingTalkBindUrl, unbindOwnDingTalk } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const dingtalkEnabled = ref(false)
+
+onMounted(async () => {
+  try {
+    dingtalkEnabled.value = (await getAuthConfig()).data.dingtalkEnabled
+  } catch {
+    dingtalkEnabled.value = false
+  }
+})
 
 /** 左侧菜单：从路由表自动生成，按 meta.perm 过滤（perm 为空默认可见） */
 const menuItems = computed(() =>
@@ -24,6 +34,22 @@ async function onLogout() {
   auth.logout()
   router.push('/login')
 }
+
+async function onUserCommand(command: string) {
+  if (command === 'logout') return onLogout()
+  if (command === 'bind-dingtalk') {
+    const { data } = await getDingTalkBindUrl()
+    location.assign(data.url)
+    return
+  }
+  if (command === 'unbind-dingtalk') {
+    await ElMessageBox.confirm('确认解除当前账号的钉钉绑定？', '钉钉账号', { type: 'warning' })
+    await unbindOwnDingTalk()
+    if (auth.user) auth.user.dingtalkBound = false
+    localStorage.setItem('wms-user', JSON.stringify(auth.user))
+    ElMessage.success('已解除钉钉绑定')
+  }
+}
 </script>
 
 <template>
@@ -39,14 +65,26 @@ async function onLogout() {
     <el-container>
       <el-header class="pc-header">
         <div class="pc-header-title">{{ route.meta.title ?? '' }}</div>
-        <el-dropdown @command="onLogout">
+        <el-dropdown @command="onUserCommand">
           <span class="pc-user">
             {{ username }}<em v-if="rolesText">（{{ rolesText }}）</em>
             <el-icon><svg viewBox="0 0 1024 1024" width="14" height="14"><path fill="currentColor" d="M831.872 340.864 512 652.672 192.128 340.864a30.592 30.592 0 0 0-42.752 0 29.12 29.12 0 0 0 0 41.6L489.664 714.24a32 32 0 0 0 44.672 0l340.288-331.712a29.12 29.12 0 0 0 0-41.728 30.592 30.592 0 0 0-42.752 0z"/></svg></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              <el-dropdown-item
+                v-if="dingtalkEnabled && !auth.user?.dingtalkBound"
+                command="bind-dingtalk"
+              >
+                绑定钉钉
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-if="dingtalkEnabled && auth.user?.dingtalkBound"
+                command="unbind-dingtalk"
+              >
+                解除钉钉绑定
+              </el-dropdown-item>
+              <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>

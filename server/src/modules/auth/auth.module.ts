@@ -8,13 +8,15 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { RbacModule } from '../rbac/rbac.module';
 import { PermissionGuard } from '../rbac/permission.guard';
 import { TempGrant } from '../rbac/entities/temp-grant.entity';
+import { DingTalkAuthState } from './dingtalk-auth-state.entity';
+import { DingTalkService } from './dingtalk.service';
 
 export const JWT_SECRET = process.env.MES_JWT_SECRET || 'mes-dev-secret-change-in-prod';
 
 @Module({
   imports: [
     RbacModule,
-    TypeOrmModule.forFeature([TempGrant]),
+    TypeOrmModule.forFeature([TempGrant, DingTalkAuthState]),
     JwtModule.register({
       global: true,
       secret: JWT_SECRET,
@@ -24,10 +26,11 @@ export const JWT_SECRET = process.env.MES_JWT_SECRET || 'mes-dev-secret-change-i
   controllers: [AuthController],
   providers: [
     AuthService,
+    DingTalkService,
     // 顺序固定：先认证，再鉴权
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],
-  exports: [AuthService],
+  exports: [AuthService, DingTalkService],
 })
 export class AuthModule {}

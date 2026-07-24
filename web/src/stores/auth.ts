@@ -7,6 +7,8 @@ export interface AuthUser {
   roles: string[]
   /** 后端若下发细粒度权限码则存这里（可选） */
   perms?: string[]
+  dingtalkBound?: boolean
+  avatarUrl?: string | null
 }
 
 const TOKEN_KEY = 'wms-token'

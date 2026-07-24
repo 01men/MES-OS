@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { INestApplication, Module, ValidationPipe, RequestMethod } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { APP_INTERCEPTOR } from '@nestjs/core';
@@ -24,6 +24,7 @@ import { IntegrationModule } from '../../src/modules/integration/integration.mod
 import { SyncService } from '../../src/modules/integration/sync.service';
 import { DocStatus } from '../../src/common/enums';
 import { AuditLog } from '../../src/common/audit/audit.entity';
+import { DingTalkService } from '../../src/modules/auth/dingtalk.service';
 
 /**
  * e2e 根模块：静态装配（Vitest 环境下不用运行时自动发现）。
@@ -327,5 +328,121 @@ describe('MES WMS e2e（supertest + 内存 sqljs 完整 App）', () => {
       .set('X-Task-No', 'OT-XTASK-REQUEST-1')
       .send(body);
     expect(second.body).toEqual(first.body);
+  });
+
+  it('临时授权：创建后立即生效，撤销后立即失效，全程写审计', async () => {
+    const users = await request(server)
+      .get('/api/rbac/users')
+      .set(auth(adminToken));
+    const receiver = users.body.find((user: any) => user.username === 'receiver01');
+
+    await request(server)
+      .get('/api/rbac/users')
+      .set(auth(receiverToken))
+      .expect(403);
+
+    const created = await request(server)
+      .post('/api/rbac/temp-grants')
+      .set(auth(adminToken))
+      .send({
+        userId: receiver.id,
+        permissionCode: 'rbac.read',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      });
+    expect(created.status).toBe(201);
+    expect(created.body.permissionCode).toBe('rbac.read');
+
+    await request(server)
+      .get('/api/rbac/users')
+      .set(auth(receiverToken))
+      .expect(200);
+
+    await request(server)
+      .delete(`/api/rbac/temp-grants/${created.body.id}`)
+      .set(auth(adminToken))
+      .expect(200);
+
+    await request(server)
+      .get('/api/rbac/users')
+      .set(auth(receiverToken))
+      .expect(403);
+
+    const actions = (
+      await app.get(DataSource).getRepository(AuditLog).find({
+        where: { docNo: 'receiver01' },
+      })
+    ).map((row) => row.action);
+    expect(actions).toContain('rbac.temp-grant.create');
+    expect(actions).toContain('rbac.temp-grant.revoke');
+  });
+
+  it('钉钉 OAuth：绑定、一次性 state、登录签发 JWT、解绑', async () => {
+    const oldId = process.env.MES_DINGTALK_CLIENT_ID;
+    const oldSecret = process.env.MES_DINGTALK_CLIENT_SECRET;
+    const oldOrigin = process.env.MES_PUBLIC_ORIGIN;
+    process.env.MES_DINGTALK_CLIENT_ID = 'ding-e2e';
+    process.env.MES_DINGTALK_CLIENT_SECRET = 'e2e-secret';
+    process.env.MES_PUBLIC_ORIGIN = 'http://127.0.0.1:5173';
+    const dingtalk = app.get(DingTalkService);
+    const exchange = vi.spyOn(dingtalk, 'exchangeAuthCode').mockResolvedValue({
+      unionId: 'union-receiver-01',
+      openId: 'open-receiver-01',
+      nick: '收料员一号',
+    });
+
+    try {
+      const config = await request(server).get('/api/auth/config');
+      expect(config.status).toBe(200);
+      expect(config.body.dingtalkEnabled).toBe(true);
+
+      const bindUrl = await request(server)
+        .get('/api/auth/dingtalk/bind-url')
+        .set(auth(receiverToken));
+      expect(bindUrl.status).toBe(200);
+      const bindState = new URL(bindUrl.body.url).searchParams.get('state')!;
+      const bindCallback = await request(server)
+        .get('/api/auth/dingtalk/callback')
+        .query({ code: 'bind-code', state: bindState });
+      expect(bindCallback.status).toBe(302);
+      expect(bindCallback.headers.location).toContain('dingtalk=bound');
+
+      const replay = await request(server)
+        .get('/api/auth/dingtalk/callback')
+        .query({ code: 'bind-code', state: bindState });
+      expect(replay.status).toBe(302);
+      expect(replay.headers.location).toContain('dingtalk_error=');
+
+      const loginUrl = await request(server).get('/api/auth/dingtalk/login-url');
+      const loginState = new URL(loginUrl.body.url).searchParams.get('state')!;
+      const loginCallback = await request(server)
+        .get('/api/auth/dingtalk/callback')
+        .query({ authCode: 'login-code', state: loginState });
+      expect(loginCallback.status).toBe(302);
+      const redirect = new URL(loginCallback.headers.location);
+      const hash = new URLSearchParams(redirect.hash.slice(1));
+      const token = hash.get('dingtalk_token');
+      const user = JSON.parse(hash.get('dingtalk_user')!);
+      expect(user.username).toBe('receiver01');
+      expect(user.dingtalkBound).toBe(true);
+      await request(server)
+        .get('/api/auth/me')
+        .set(auth(token!))
+        .expect(200);
+
+      const unbind = await request(server)
+        .post('/api/auth/dingtalk/unbind')
+        .set(auth(receiverToken));
+      expect(unbind.status).toBe(201);
+      expect(unbind.body.dingtalkBound).toBe(false);
+      expect(exchange).toHaveBeenCalledTimes(2);
+    } finally {
+      exchange.mockRestore();
+      if (oldId === undefined) delete process.env.MES_DINGTALK_CLIENT_ID;
+      else process.env.MES_DINGTALK_CLIENT_ID = oldId;
+      if (oldSecret === undefined) delete process.env.MES_DINGTALK_CLIENT_SECRET;
+      else process.env.MES_DINGTALK_CLIENT_SECRET = oldSecret;
+      if (oldOrigin === undefined) delete process.env.MES_PUBLIC_ORIGIN;
+      else process.env.MES_PUBLIC_ORIGIN = oldOrigin;
+    }
   });
 });

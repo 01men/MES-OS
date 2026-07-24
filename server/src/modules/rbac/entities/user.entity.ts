@@ -25,6 +25,22 @@ export class User {
   @Column({ type: 'boolean', default: false })
   disabled: boolean;
 
+  /** 钉钉 OAuth 身份；只允许绑定到一个本地 MES 用户。 */
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  dingtalkUnionId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  dingtalkOpenId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  dingtalkNick: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  dingtalkAvatarUrl: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  dingtalkBoundAt: Date | null;
+
   @ManyToMany(() => Role, (r) => r.users, { eager: true })
   @JoinTable({ name: 'rbac_user_role' })
   roles: Role[];

@@ -163,12 +163,12 @@ describe('异常物料链 e2e（surplus/transfer/returns）', () => {
     }
 
     tokens.admin = await login('admin', 'Admin@123');
-    tokens.leader = await login('leader01', 'Test@123');
+    tokens.leader = await login('leader01', 'Lead@123');
     tokens.whm = await login('whm01', 'Test@123');
-    tokens.qe = await login('qe01', 'Test@123');
+    tokens.qe = await login('qe01', 'Qe@123');
     tokens.insp = await login('insp01', 'Test@123');
     tokens.fin = await login('fin01', 'Test@123');
-    tokens.pmc = await login('pmc01', 'Test@123');
+    tokens.pmc = await login('pmc01', 'Pmc@123');
     tokens.dir = await login('dir01', 'Test@123');
 
     // 库存准备

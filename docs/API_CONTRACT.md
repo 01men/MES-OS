@@ -33,12 +33,22 @@
 | 方法 | 路径 | 权限 | 说明 |
 | --- | --- | --- | --- |
 | POST | `/auth/login` | 公开 | `{username,password}` |
+| GET | `/auth/config` | 公开 | 钉钉登录是否可用；不返回密钥 |
 | GET | `/auth/me` | 登录 | 当前用户、角色、权限 |
+| GET | `/auth/dingtalk/login-url` | 公开 | 创建一次性 state 并返回钉钉授权 URL |
+| GET | `/auth/dingtalk/bind-url` | 登录 | 为当前 MES 用户发起钉钉绑定 |
+| GET | `/auth/dingtalk/callback` | 公开 | OAuth 回调；state 十分钟有效且仅消费一次 |
+| POST | `/auth/dingtalk/unbind` | 登录 | 当前用户自助解绑，写审计 |
 | GET | `/rbac/users` | `rbac.read` | 用户列表，不返回密码摘要 |
 | GET | `/rbac/roles` | `rbac.read` | 角色及权限点 |
 | GET | `/rbac/permissions` | `rbac.read` | 权限目录 |
 | GET | `/rbac/temp-grants` | `rbac.read` | 临时授权及到期时间 |
 | POST | `/rbac/users/:userId/roles` | `rbac.write` | `{roles:[roleId或code]}`，写审计日志 |
+| POST | `/rbac/temp-grants` | `rbac.write` | `{userId,permissionCode,expiresAt}`；禁止临时授予 `*` |
+| DELETE | `/rbac/temp-grants/:id` | `rbac.write` | 撤销后立即失效并写审计 |
+| POST | `/rbac/users/:userId/dingtalk/unbind` | `rbac.write` | 管理员解绑指定用户 |
+
+钉钉服务端配置：`MES_DINGTALK_CLIENT_ID`、`MES_DINGTALK_CLIENT_SECRET`、`MES_PUBLIC_ORIGIN`。公开回调地址必须与钉钉应用登记地址一致。钉钉身份只允许绑定已有 MES 用户；首次出现的 unionId 不会自动创建账号或角色。
 
 权限说明：控制器上声明 `@RequirePerm` 的接口由权限守卫校验；其余业务接口当前主要由登录态及服务层岗位/状态机规则校验。前端 `meta.perm` 仅用于菜单和路由可见性，不能替代服务端授权。
 

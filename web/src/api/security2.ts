@@ -9,6 +9,7 @@ export interface RbacUser {
   username: string
   name?: string
   roles?: string[] | { id: number; code?: string; name: string }[]
+  dingtalkBound?: boolean
   [k: string]: unknown
 }
 
@@ -90,6 +91,22 @@ export function listTempGrants() {
 
 export function assignUserRoles(userId: number, roles: (number | string)[]) {
   return http.post(`/rbac/users/${userId}/roles`, { roles })
+}
+
+export function createTempGrant(body: {
+  userId: number
+  permissionCode: string
+  expiresAt: string
+}) {
+  return http.post<TempGrant>('/rbac/temp-grants', body)
+}
+
+export function revokeTempGrant(grantId: number) {
+  return http.delete(`/rbac/temp-grants/${grantId}`)
+}
+
+export function unbindUserDingTalk(userId: number) {
+  return http.post(`/rbac/users/${userId}/dingtalk/unbind`)
 }
 
 export function listAuditLogs(params: AuditQuery) {

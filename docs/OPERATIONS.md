@@ -69,8 +69,33 @@ Copy-Item .\server\data\mes.sqlite .\server\data\backups\mes-$(Get-Date -Format 
 | 变量 | 必须性 | 说明 |
 | --- | --- | --- |
 | `MES_JWT_SECRET` | 生产必须 | JWT 签名密钥，禁止使用仓库默认值 |
+| `MES_PUBLIC_ORIGIN` | 钉钉登录必须 | 浏览器可访问的 HTTPS 根地址 |
+| `MES_DINGTALK_CLIENT_ID` | 钉钉登录必须 | 企业内部应用 Client ID/AppKey |
+| `MES_DINGTALK_CLIENT_SECRET` | 钉钉登录必须 | 仅保存在服务端 |
+| `MES_TRUST_PROXY` | 可选 | 仅在可信反向代理正确覆盖转发头时设为 `1` |
 
 生产密钥不得写入仓库、日志、测试数据或交接文档。
+
+## 钉钉授权登录
+
+参考 `server/.env.example` 配置部署环境变量。钉钉开放平台回调地址应为：
+
+```text
+https://mes.example.com/api/auth/dingtalk/callback
+```
+
+启用步骤：
+
+1. 用户先使用本地账号登录。
+2. 在 PC/PDA 用户菜单选择“绑定钉钉”。
+3. 完成授权后，后续可从登录页使用钉钉登录。
+4. 离职、换岗或账号异常时，在权限管理页解绑并调整角色或停用用户。
+
+不要把 Client Secret 写入前端 `.env`、Git、截图或测试报告。
+
+## 演示岗位账号
+
+`npm run seed` 会创建 11 个岗位账号，仅用于开发和自动化验收。账号明细定义在 `server/src/seed.ts`。生产部署必须停用演示账号或重置为独立强密码。
 
 ## 常见故障
 
@@ -106,4 +131,3 @@ Get-NetTCPConnection -LocalPort 3000,5173 -State Listen |
 - U8 为 Mock 适配器，不能视为真实接口验收完成。
 - 上传文件位于本地磁盘，生产需补充共享存储、备份、病毒扫描和生命周期策略。
 - 日志目前是数据库只读 API，不等同于不可篡改存储；生产需补充归档和访问审计。
-

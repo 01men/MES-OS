@@ -59,7 +59,7 @@ const PERMISSIONS: [string, string, PermissionType][] = [
  * 角色清单（PRD 对接会 11 个岗位角色全量建立，数据范围默认 ALL）：
  * 收料员/仓管员/质检员/质量工程师/PMC计划员/生产班组长/仓库主管/财务/销售/IT运维/系统管理员
  */
-const ROLES: { code: string; name: string; perms: string[] }[] = [
+export const ROLE_DEFINITIONS: { code: string; name: string; perms: string[] }[] = [
   { code: 'RECEIVER', name: '收料员', perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'offline.sync', 'receiving.read', 'receiving.operate'] },
   { code: 'KEEPER', name: '仓管员', perms: ['masterdata.read', 'inventory.read', 'inventory.inbound', 'inventory.move', 'offline.sync', 'prep.read', 'prep.operate', 'surplus.read', 'surplus.operate', 'returns.read', 'returns.operate', 'returns.qtransfer'] },
   { code: 'INSPECTOR', name: '质检员', perms: ['masterdata.read', 'inventory.read', 'inventory.move', 'receiving.read', 'receiving.operate', 'returns.qtransfer'] },
@@ -72,6 +72,21 @@ const ROLES: { code: string; name: string; perms: string[] }[] = [
   { code: 'IT_OPS', name: 'IT运维', perms: ['integration.read', 'integration.replay', 'integration.reconcile', 'config.read', 'config.write'] },
   { code: 'ADMIN', name: '系统管理员', perms: ['*'] },
 ];
+
+/** 仅用于本地演示与自动化验收；生产环境必须停用或重置这些密码。 */
+export const DEMO_USERS = [
+  { username: 'admin', password: 'Admin@123', name: '系统管理员', role: 'ADMIN' },
+  { username: 'receiver01', password: 'Recv@123', name: '收料员一号', role: 'RECEIVER' },
+  { username: 'keeper01', password: 'Keep@123', name: '仓管员一号', role: 'KEEPER' },
+  { username: 'inspector01', password: 'Inspect@123', name: '质检员一号', role: 'INSPECTOR' },
+  { username: 'qe01', password: 'Qe@123', name: '质量工程师一号', role: 'QE' },
+  { username: 'pmc01', password: 'Pmc@123', name: 'PMC计划员一号', role: 'PMC' },
+  { username: 'leader01', password: 'Lead@123', name: '生产班组长一号', role: 'LEADER' },
+  { username: 'whmanager01', password: 'WhMgr@123', name: '仓库主管一号', role: 'WH_MANAGER' },
+  { username: 'finance01', password: 'Fin@123', name: '财务一号', role: 'FINANCE' },
+  { username: 'sales01', password: 'Sales@123', name: '销售一号', role: 'SALES' },
+  { username: 'itops01', password: 'Ops@123', name: 'IT运维一号', role: 'IT_OPS' },
+] as const;
 
 /** 可被 CLI 与 e2e 复用的种子数据逻辑 */
 export async function seedData(ds: DataSource) {
@@ -86,7 +101,7 @@ export async function seedData(ds: DataSource) {
     permMap.set(code, p);
   }
 
-  for (const def of ROLES) {
+  for (const def of ROLE_DEFINITIONS) {
     let role = await roleRepo.findOne({ where: { code: def.code } });
     const perms = def.perms.map((c) => permMap.get(c)!);
     if (!role) {
@@ -99,8 +114,12 @@ export async function seedData(ds: DataSource) {
 
   const ensureUser = async (username: string, password: string, name: string, roleCodes: string[]) => {
     let u = await userRepo.findOne({ where: { username } });
-    if (u) return u;
     const roles = await roleRepo.find({ where: roleCodes.map((code) => ({ code })) as any });
+    if (u) {
+      u.name = name;
+      u.roles = roles;
+      return userRepo.save(u);
+    }
     u = userRepo.create({
       username,
       name,
@@ -110,9 +129,9 @@ export async function seedData(ds: DataSource) {
     });
     return userRepo.save(u);
   };
-  await ensureUser('admin', 'Admin@123', '系统管理员', ['ADMIN']);
-  await ensureUser('receiver01', 'Recv@123', '收料员一号', ['RECEIVER']);
-  await ensureUser('keeper01', 'Keep@123', '仓管员一号', ['KEEPER']);
+  for (const user of DEMO_USERS) {
+    await ensureUser(user.username, user.password, user.name, [user.role]);
+  }
 
   // ---- 演示主数据 ----
   const matRepo = ds.getRepository(Material);
@@ -209,7 +228,7 @@ async function main() {
   await seedData(ds);
   await ds.destroy();
   // eslint-disable-next-line no-console
-  console.log('Seed done: admin/Admin@123, receiver01/Recv@123, keeper01/Keep@123');
+  console.log(`Seed done: ${DEMO_USERS.length} demo users created or synchronized`);
 }
 
 if (require.main === module) {
